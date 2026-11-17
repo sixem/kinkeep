@@ -1,0 +1,23 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check project and tests
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work node:24-alpine sh -ec '
+            apk add --no-cache imagemagick imagemagick-jpeg imagemagick-webp
+            npm ci --prefix server
+            npm run check
+          '
+      - name: Test container and archive transfers
+        run: ./scripts/smoke-docker.sh

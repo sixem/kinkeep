@@ -1,0 +1,17 @@
+{
+  "name": "kinexport-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1"
+  }
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>KinExport</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="header">
+    <div class="brand"><img src="icons/icon48.png" width="32" height="32" alt=""><div><h1>KinExport</h1><span class="eyebrow">Realtime archive</span></div></div>
+    <span id="indicator" class="badge paused" role="status">Paused</span>
+  </header>
+  <main>
+    <label class="toggle-row" for="enabled"><span>Archiving</span><span class="switch"><input id="enabled" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+    <p id="status" class="notice" role="status"></p>
+    <p id="capture-status" class="notice" role="status"></p>
+    <form id="settings-form">
+      <label for="endpoint">Archive server URL</label>
+      <input id="endpoint" type="url" placeholder="http://127.0.0.1:8765" required>
+      <label for="token">Access token</label>
+      <input id="token" type="password" autocomplete="off" placeholder="Server access token">
+      <div class="buttons"><button type="submit">Save settings</button><button type="button" id="test">Test connection</button></div>
+      <p id="feedback" class="feedback" role="status"></p>
+    </form>
+  </main>
+  <footer><a id="open" href="#" target="_blank" rel="noopener noreferrer">Open archive <span aria-hidden="true">↗</span></a></footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

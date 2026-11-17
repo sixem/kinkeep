@@ -1,0 +1,14 @@
+{
+  "name": "kinexport",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first archive for passively observed Kindroid data",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "node scripts/check-project.mjs && node --check server/server.js && node --check server/media-store.js && node --check server/portable.js && node --check server/thumbnail.js && node --check server/public/app.js && npm test",
+    "test": "npm --prefix server test && npm --prefix extension run check"
+  }
+}

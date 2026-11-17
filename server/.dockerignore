@@ -1,0 +1,14 @@
+node_modules
+*.sqlite*
+test
+.git
+.env
+.env.*
+!.env.example
+data
+backups
+coverage
+*.db
+*.db-*
+*.zip
+*.log

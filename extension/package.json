@@ -1,0 +1,9 @@
+{
+  "name": "kinexport-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check background.js && node --check cache-read.js && node --check profiles.js && node --check extract.js && node --check dom-extract.js && node --check media-candidates.js && node --check mhtml.js && node --check history-main.js && node --check plaintext.js && node --check capture.js && node --check common.js && node --check popup.js && node --test test/*.test.js"
+  }
+}

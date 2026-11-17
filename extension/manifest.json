@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "KinExport",
+  "description": "Passively archive Kindroid messages to your own archive server.",
+  "version": "0.1.0",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "pageCapture"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "KinExport",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://kindroid.ai/*"],
+      "js": ["history-main.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://kindroid.ai/*"
+      ],
+      "js": [
+        "cache-read.js",
+        "profiles.js",
+        "extract.js",
+        "dom-extract.js",
+        "media-candidates.js",
+        "plaintext.js",
+        "capture.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

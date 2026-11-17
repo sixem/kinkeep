@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KinExport archive</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><h1><button id="home" class="brand-home" type="button" aria-label="KinExport home"><img class="brand-icon" src="/favicon.png" width="28" height="28" alt=""><span class="brand-name">KinExport</span></button></h1><span class="eyebrow">LOCAL ARCHIVE</span></div>
+    <button id="lock" type="button" class="secondary button-with-icon" hidden><span class="icon icon--lock" aria-hidden="true"></span><span class="button-with-icon__label">Lock archive</span></button>
+  </header>
+  <main>
+    <section id="login" class="login-panel">
+      <h2>Open your archive</h2>
+      <p>Enter the token generated during setup. It stays in this tab until you lock the archive or close the tab.</p>
+      <form id="login-form"><label for="token">Archive token</label><input id="token" type="password" autocomplete="off" required><button type="submit">Open archive</button></form>
+    </section>
+    <div id="archive" hidden>
+      <div class="archive-toolbar">
+        <section class="stats" aria-label="Archive statistics">
+          <div class="stat"><span>Kins</span><strong id="kin-count">0</strong></div>
+          <div class="stat"><span>Conversations</span><strong id="conversation-count">0</strong></div>
+          <div class="stat"><span>Messages</span><strong id="message-count">0</strong></div>
+          <div class="stat last-archived"><span>Last archived</span><strong id="last-archived">—</strong></div>
+        </section>
+        <section class="tools" aria-label="Archive tools">
+          <div class="buttons"><button id="export" type="button" class="secondary button-with-icon"><span class="icon icon--download" aria-hidden="true"></span><span class="button-with-icon__label">Export ZIP</span></button><span class="file-picker"><input id="import-file" class="visually-hidden" type="file" accept=".zip,application/zip"><label class="button secondary button-with-icon" for="import-file"><span class="icon icon--upload" aria-hidden="true"></span><span id="import-label" class="button-with-icon__label">Import ZIP</span></label></span><div class="dropdown backup-dropdown" id="backup-dropdown"><button type="button" id="backup-trigger" class="dropdown-trigger" aria-expanded="false" aria-controls="backup-options"><span id="backup-label">SQLite backups</span><span aria-hidden="true">⌄</span></button><div id="backup-options" class="dropdown-content" hidden><button type="button" class="list-item" id="backup-download">Download backup</button><button type="button" class="list-item" id="backup-restore">Restore backup</button><input id="backup-file" type="file" class="visually-hidden" accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3" tabindex="-1" aria-label="SQLite backup file"></div></div><button id="refresh" type="button" class="secondary button-with-icon"><span class="icon icon--refresh" aria-hidden="true"></span><span class="button-with-icon__label">Refresh</span></button></div>
+        </section>
+      </div>
+      <section class="search-panel" aria-label="Search messages">
+        <form id="search-form"><label for="search" class="visually-hidden">Search messages</label><input id="search" type="search" placeholder="Search messages" maxlength="500" required><button type="submit" class="button-with-icon"><span class="icon icon--search" aria-hidden="true"></span><span class="button-with-icon__label">Search</span></button></form>
+        <div class="context-selectors" aria-label="Archive selection">
+          <div class="dropdown" id="account-dropdown">
+            <button type="button" id="account-trigger" class="dropdown-trigger" aria-expanded="false" aria-controls="account-options"><span id="account-label">Choose account</span><span aria-hidden="true">⌄</span></button>
+            <div id="account-options" class="dropdown-content" hidden><ul id="accounts"></ul></div>
+          </div>
+          <div class="dropdown" id="kin-dropdown">
+            <button type="button" id="kin-trigger" class="dropdown-trigger" aria-expanded="false" aria-controls="kin-options" disabled><span id="kin-label">Choose Kin</span><span aria-hidden="true">⌄</span></button>
+            <div id="kin-options" class="dropdown-content" hidden><p id="kins-help" class="muted">Choose an account to see its Kins.</p><ul id="kins"></ul></div>
+          </div>
+        </div>
+        <div id="search-results" aria-live="polite"></div>
+      </section>
+      <section class="archive-grid" aria-label="Browse archive">
+        <nav class="archive-nav" aria-label="Archive navigation" tabindex="0">
+          <div class="section-nav" aria-label="Archive sections">
+            <button type="button" id="nav-messages" class="section-nav__item button-with-icon"><span class="icon icon--messages" aria-hidden="true"></span><span class="button-with-icon__label">Messages</span></button>
+            <button type="button" id="nav-personality" class="section-nav__item button-with-icon"><span class="icon icon--personality" aria-hidden="true"></span><span class="button-with-icon__label">Personality</span></button>
+            <button type="button" id="nav-journal" class="section-nav__item button-with-icon"><span class="icon icon--journal" aria-hidden="true"></span><span class="button-with-icon__label">Journal</span></button>
+            <button type="button" id="nav-images" class="section-nav__item button-with-icon"><span class="icon icon--images" aria-hidden="true"></span><span class="button-with-icon__label">Images</span></button>
+            <button type="button" id="nav-settings" class="section-nav__item button-with-icon"><span class="icon icon--settings" aria-hidden="true"></span><span class="button-with-icon__label">Settings</span></button>
+          </div>
+        </nav>
+        <div class="archive-content">
+          <div class="pane welcome-panel" id="welcome-panel"><div class="welcome-content"><h2>KinExport</h2><p>Your conversations, personalities, and journals in one local archive.</p><span class="welcome-version">Version 0.1.0</span></div></div>
+          <div class="pane message-panel" id="message-panel" hidden><div class="message-heading"><h2 id="messages-title">Messages</h2><div class="message-heading__actions"><div class="dropdown conversation-dropdown" id="conversation-panel" hidden><button type="button" id="conversation-trigger" class="dropdown-trigger" aria-expanded="false" aria-controls="conversation-options" aria-label="Conversation"><span id="conversation-label">Choose conversation</span><span aria-hidden="true">⌄</span></button><div id="conversation-options" class="dropdown-content" hidden><p id="conversations-help" class="muted"></p><ul id="conversations"></ul></div></div><span id="selected-message-count" class="message-count"></span></div></div><div class="message-scroll-area"><div id="messages" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div><button id="messages-scroll-top" class="message-scroll-button message-scroll-button--top" type="button" aria-label="Scroll to top of messages" aria-controls="messages" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button><button id="messages-scroll-bottom" class="message-scroll-button message-scroll-button--bottom" type="button" aria-label="Scroll to bottom of messages" aria-controls="messages" disabled><span class="icon icon--arrow-down" aria-hidden="true"></span></button></div><div id="message-paging" class="message-paging" hidden></div></div>
+          <div class="pane profile-panel" id="personality-panel" hidden><div class="message-heading"><h2 id="profile-title">Personality</h2></div><div id="profile" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div></div>
+          <div class="pane profile-panel" id="settings-panel" hidden><div class="message-heading"><h2 id="settings-title">Settings</h2></div><div id="settings-profile" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div></div>
+          <div class="pane journal-panel" id="journal-panel" hidden><div class="message-heading"><h2>Journal</h2><span id="journal-count" class="message-count"></span></div><div id="journal-entries" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div><div id="journal-paging" class="message-paging" hidden></div></div>
+          <div class="pane journal-panel" id="images-panel" hidden><div class="message-heading"><h2>Images</h2><span id="images-count" class="message-count"></span></div><div id="images-entries" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div></div>
+          <div id="image-viewer" class="image-viewer" role="dialog" aria-modal="true" aria-labelledby="image-viewer-title" hidden>
+            <div class="image-viewer__panel"><button id="image-viewer-close" class="image-viewer__close" type="button" aria-label="Close image">×</button>
+              <div class="image-viewer__media"><img id="image-viewer-image" alt=""></div>
+              <div class="image-viewer__details">
+                <div class="image-viewer__content" id="image-viewer-content" tabindex="0"><h2 id="image-viewer-title"></h2><p id="image-viewer-date" class="muted"></p><section id="image-viewer-prompt-section" hidden><h3 id="image-viewer-prompt-label">Prompt</h3><textarea id="image-viewer-prompt" class="readonly-field" aria-labelledby="image-viewer-prompt-label" readonly spellcheck="false" rows="3"></textarea></section></div>
+                <a id="image-viewer-download" class="button secondary button-with-icon image-viewer__download" download><span class="icon icon--download" aria-hidden="true"></span><span class="button-with-icon__label">Download</span></a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div id="toasts" class="toast-region" aria-live="polite" aria-relevant="additions"></div>
+</body>
+</html>
