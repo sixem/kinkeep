@@ -25,5 +25,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check project and tests
         run: |
-          npm ci --prefix server
+          npm ci --prefix server --ignore-scripts
           npm run check

@@ -514,3 +514,70 @@ test('image grid virtualizes tiles, loads metadata on scroll, and fetches the or
   elements.get('#image-viewer-close').click();assert.equal(elements.get('#image-viewer').hidden,true);
   elements.get('#nav-messages').click();
 });
+
+test('thumbnail loading limits concurrent requests and retries temporary server saturation', async () => {
+  const elements = new Map(), timers = new Map(), requests = []; let timerId = 0;
+  const document = {
+    addEventListener() {},
+    querySelector(selector) { if (!elements.has(selector)) { const node = new Element(); node.ownerDocument = this; elements.set(selector, node); } return elements.get(selector); },
+    createElement(tag) { const node = new Element(tag); node.ownerDocument = this; return node; },
+    createElementNS(_namespace, tag) { return this.createElement(tag); },
+    createTextNode(value) { const node = this.createElement('#text'); node.textContent = value; return node; },
+  };
+  class TestURL extends URL { static createObjectURL() { return 'blob:thumbnail'; } static revokeObjectURL() {} }
+  const fetch = (url, options) => new Promise((resolve, reject) => {
+    requests.push({ url, resolve, reject });
+    options.signal?.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })));
+  });
+  const context = { document, fetch, sessionStorage: { getItem: () => '', setItem() {}, removeItem() {} }, URLSearchParams, URL: TestURL, Date, AbortController,
+    setTimeout: callback => { const id = ++timerId; timers.set(id, callback); return id; }, clearTimeout: id => timers.delete(id), console };
+  const source = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8') + '\nglobalThis.setTestImagesState = state => { imagesState = state; };';
+  runInNewContext(source, context);
+  const state = { mounted: new Map(), thumbnailQueue: [], thumbnailActive: 0 };
+  for (let i = 0; i < 10; i++) state.mounted.set(i, { item: { sha256: String(i), kind: 'selfie', variant: 'preview' }, image: {}, url: null, controller: null, retryTimer: null, retries: 0, loading: false, failed: false });
+  context.setTestImagesState(state);
+  for (let i = 0; i < 10; i++) context.loadImageThumbnail(state, i);
+  assert.equal(requests.length, 6);
+  assert.equal(state.thumbnailQueue.length, 4);
+  requests[0].resolve({ ok: false, status: 503, json: async () => ({ error: 'busy' }) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.length, 7, 'another queued image can start while one waits to retry');
+  assert.equal(timers.size, 1);
+  const runTimer = () => { const [id, callback] = timers.entries().next().value; timers.delete(id); callback(); };
+  runTimer();
+  assert.equal(state.mounted.get(0).failed, false);
+  requests[1].resolve({ ok: true, blob: async () => new Blob(['image']) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests.length, 8);
+  for (let i = 2; i < 8; i++) requests[i].resolve({ ok: true, blob: async () => new Blob(['image']) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(requests.length > 10, 'the saturated image was retried');
+  for (const request of requests.slice(8)) request.resolve({ ok: true, blob: async () => new Blob(['image']) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.mounted.get(0).image.src, 'blob:thumbnail');
+  assert.equal(state.mounted.get(0).failed, false);
+
+  const tile = () => ({ item: { sha256: 'extra', kind: 'selfie', variant: 'preview' }, image: {}, url: null, controller: null, retryTimer: null, retries: 0, loading: false, failed: false });
+  const aborted = tile(); state.mounted.set(10, aborted); context.loadImageThumbnail(state, 10);
+  state.mounted.delete(10); aborted.controller.abort();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(aborted.failed, false, 'an aborted off-screen request is not marked as failed');
+  assert.equal(timers.size, 0);
+
+  const exhausted = tile(); state.mounted.set(11, exhausted); context.loadImageThumbnail(state, 11);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    requests.at(-1).resolve({ ok: false, status: 503, json: async () => ({ error: 'busy' }) });
+    await new Promise(resolve => setImmediate(resolve));
+    if (attempt < 3) { assert.equal(timers.size, 1); runTimer(); }
+  }
+  assert.equal(exhausted.failed, true, 'persistent saturation is surfaced after bounded retries');
+  assert.match(exhausted.image.alt, /unavailable/);
+  assert.equal(timers.size, 0);
+
+  const waiting = tile(); state.mounted.set(12, waiting); context.loadImageThumbnail(state, 12);
+  requests.at(-1).resolve({ ok: false, status: 503, json: async () => ({ error: 'busy' }) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(timers.size, 1);
+  context.clearImages();
+  assert.equal(timers.size, 0, 'leaving Images cancels scheduled retries');
+});

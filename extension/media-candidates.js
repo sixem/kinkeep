@@ -15,7 +15,7 @@
     const images = [...document.images].filter(img => {
       const rect = img.getBoundingClientRect(); const style = document.defaultView?.getComputedStyle(img);
       if (!img.complete || !img.naturalWidth || !img.naturalHeight || !rect.width || !rect.height || style?.display === 'none' || style?.visibility === 'hidden') return false;
-      try { const url = new URL(img.currentSrc || img.src); return url.protocol === 'https:' && (url.hostname === 'kindroid.ai' || url.hostname.endsWith('.kindroid.ai')); } catch { return false; }
+      try { const url = new URL(img.currentSrc || img.src); return url.protocol === 'https:' && !url.username && !url.password && (url.hostname === 'kindroid.ai' || url.hostname.endsWith('.kindroid.ai')); } catch { return false; }
     });
     const records = new Map();
     for (const query of queries) {

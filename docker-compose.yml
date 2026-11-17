@@ -4,6 +4,7 @@ services:
     build: ./server
     init: true
     read_only: true
+    pids_limit: 128
     cap_drop:
       - ALL
     security_opt:

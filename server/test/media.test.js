@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createArchive } from '../server.js';
+import { createMediaStore } from '../media-store.js';
+import { DatabaseSync } from 'node:sqlite';
+import { spawnSync } from 'node:child_process';
+import { createThumbnail } from '../thumbnail.js';
 const create = () => createArchive({ databasePath: ':memory:', token: 'test-token' });
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
 const scope = { accountId: 'a', kinId: 'k' };
@@ -46,4 +50,42 @@ test('thumbnail generation is cached and keeps the original export intact', asyn
     assert.equal(a.media.blob(sha).bytes.toString('base64'),data);
     assert.equal(a.media.exportData().blobs[0].data,data);
   } finally { a.db.close(); }
+});
+
+test('thumbnail requests deduplicate, limit active work, and reject excess queued work', async () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE kins(account_id TEXT NOT NULL, kin_id TEXT NOT NULL, PRIMARY KEY(account_id,kin_id))');
+  let release, active = 0, peak = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const media = createMediaStore(db, {
+    requireScope() {}, transact: fn => fn(),
+    generateThumbnail: async () => { active++; peak = Math.max(peak, active); await gate; active--; return Buffer.from('thumbnail'); },
+  });
+  const insert = db.prepare('INSERT INTO media_blobs(sha256,mime,bytes) VALUES(?,?,?)');
+  const pending = [];
+  try {
+    for (let i = 0; i < 65; i++) insert.run(i.toString(16).padStart(64, '0'), 'image/png', Buffer.from([i]));
+    for (let i = 0; i < 64; i++) pending.push(media.thumbnail(i.toString(16).padStart(64, '0')));
+    assert.equal(media.thumbnail('0'.repeat(64)), pending[0], 'same image shares its existing request');
+    assert.throws(() => media.thumbnail((64).toString(16).padStart(64, '0')), error => error.status === 503);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(active, 3);
+    release();
+    await Promise.all(pending);
+    assert.equal(peak, 3);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM media_thumbnails').get().n, 64);
+    assert.ok(await media.thumbnail((64).toString(16).padStart(64, '0')), 'capacity is available after work finishes');
+  } finally {
+    release(); await Promise.allSettled(pending); db.close();
+  }
+});
+
+test('thumbnail decoder accepts the supported image formats and rejects other input', async () => {
+  for (const format of ['png', 'jpeg', 'webp']) {
+    const image = spawnSync('magick', ['-size', '2x2', 'xc:red', `${format}:-`]);
+    assert.equal(image.status, 0, `could not construct ${format} fixture`);
+    const result = await createThumbnail(image.stdout);
+    assert.equal(result.subarray(8, 12).toString(), 'WEBP');
+  }
+  await assert.rejects(createThumbnail(Buffer.from('not an image')), /Unsupported image/);
 });

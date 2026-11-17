@@ -24,7 +24,7 @@ const JOURNAL_PAGE_SIZE = 50;
 
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { Authorization: `Bearer ${token}`, ...options.headers } });
-  if (!response.ok) { let data; try { data = await response.json(); } catch {} throw new Error(data?.error || `Request failed (${response.status})`); }
+  if (!response.ok) { let data; try { data = await response.json(); } catch {} throw Object.assign(new Error(data?.error || `Request failed (${response.status})`), { status: response.status }); }
   return response;
 }
 function displayDate(value) {
@@ -514,8 +514,9 @@ function clearImages(message = 'No images archived for this Kin yet.') {
   if (previous) {
     previous.observer?.disconnect(); previous.resizeObserver?.disconnect();
     if (previous.frameHandle != null && globalThis.cancelAnimationFrame) cancelAnimationFrame(previous.frameHandle);
+    previous.thumbnailQueue = [];
     for (const tile of previous.mounted.values()) {
-      tile.controller?.abort(); if (tile.url) URL.revokeObjectURL(tile.url);
+      tile.controller?.abort(); if (tile.retryTimer != null) clearTimeout(tile.retryTimer); if (tile.url) URL.revokeObjectURL(tile.url);
     }
   }
   $('#images-count').textContent = '';
@@ -568,22 +569,34 @@ function scheduleImages(state) {
 }
 function loadImageThumbnail(state, index) {
   const entry = state.mounted.get(index);
-  if (!entry || entry.loading || entry.url || entry.failed) return;
+  if (!entry || entry.loading || entry.url || entry.failed || entry.retryTimer != null) return;
   entry.loading = true;
-  entry.controller = typeof AbortController === 'function' ? new AbortController() : null;
-  void (async () => {
-    try {
-      const options = entry.controller ? { signal: entry.controller.signal } : {};
-      const response = await api(`/api/media/thumbnail?sha256=${entry.item.sha256}`, options);
-      const blob = await response.blob();
-      if (imagesState !== state || state.mounted.get(index) !== entry) return;
-      entry.url = URL.createObjectURL(blob); entry.image.src = entry.url;
-    } catch (error) {
-      if (imagesState === state && state.mounted.get(index) === entry && error?.name !== 'AbortError') {
-        entry.failed = true; entry.image.alt = `${imageLabel(entry.item)} unavailable`;
-      }
-    } finally { entry.loading = false; entry.controller = null; }
-  })();
+  state.thumbnailQueue.push({ index, entry });
+  startImageThumbnails(state);
+}
+function startImageThumbnails(state) {
+  while (imagesState === state && state.thumbnailActive < 6 && state.thumbnailQueue.length) {
+    const { index, entry } = state.thumbnailQueue.shift();
+    if (state.mounted.get(index) !== entry) { entry.loading = false; continue; }
+    state.thumbnailActive++;
+    entry.controller = typeof AbortController === 'function' ? new AbortController() : null;
+    void (async () => {
+      try {
+        const options = entry.controller ? { signal: entry.controller.signal } : {};
+        const response = await api(`/api/media/thumbnail?sha256=${entry.item.sha256}`, options);
+        const blob = await response.blob();
+        if (imagesState !== state || state.mounted.get(index) !== entry) return;
+        entry.url = URL.createObjectURL(blob); entry.image.src = entry.url;
+      } catch (error) {
+        if (imagesState === state && state.mounted.get(index) === entry && error?.name !== 'AbortError') {
+          if (error?.status === 503 && entry.retries < 3) {
+            const delay = 500 * (2 ** entry.retries++);
+            entry.retryTimer = setTimeout(() => { entry.retryTimer = null; if (imagesState === state && state.mounted.get(index) === entry) loadImageThumbnail(state, index); }, delay);
+          } else { entry.failed = true; entry.image.alt = `${imageLabel(entry.item)} unavailable`; }
+        }
+      } finally { entry.loading = false; entry.controller = null; state.thumbnailActive--; startImageThumbnails(state); }
+    })();
+  }
 }
 function renderImages(state) {
   if (imagesState !== state || !state.grid) return;
@@ -601,10 +614,11 @@ function renderImages(state) {
   const first = Math.min(state.items.length, firstRow * columns), last = Math.min(state.items.length, lastRow * columns);
   for (const [index, tile] of state.mounted) {
     if (index >= first && index < last) continue;
-    state.observer?.unobserve(tile.button); tile.controller?.abort();
+    state.observer?.unobserve(tile.button); tile.controller?.abort(); if (tile.retryTimer != null) clearTimeout(tile.retryTimer);
     if (tile.url) URL.revokeObjectURL(tile.url);
     tile.button.remove(); state.mounted.delete(index);
   }
+  state.thumbnailQueue = state.thumbnailQueue.filter(({ index, entry }) => state.mounted.get(index) === entry);
   state.grid.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
   const children = [];
   for (let index = first; index < last; index++) {
@@ -615,7 +629,7 @@ function renderImages(state) {
       image.alt = imageLabel(item); image.loading = 'lazy';
       const date = item.createdAt ? displayDate(item.createdAt) : item.firstSeen ? `Observed ${displayDate(item.firstSeen)}` : 'Date unknown';
       button.append(image, textElement('span', date, `image-item__date${!item.createdAt && item.firstSeen ? ' image-item__date--observed' : ''}`));
-      tile = { button, image, item, url: null, controller: null, loading: false, failed: false };
+      tile = { button, image, item, url: null, controller: null, retryTimer: null, retries: 0, loading: false, failed: false };
       button.addEventListener('click', () => { void openImageViewer(state, item, button); });
       state.mounted.set(index, tile); state.indices.set(button, index);
       if (state.observer) state.observer.observe(button); else loadImageThumbnail(state, index);
@@ -630,7 +644,7 @@ function renderImages(state) {
 function ensureImages() {
   if (!selection.accountId || !selection.kinId || selection.legacy) return Promise.resolve();
   if (imagesState && imagesState.accountId === selection.accountId && imagesState.kinId === selection.kinId) return imagesState.loading ?? Promise.resolve();
-  const state = { accountId: selection.accountId, kinId: selection.kinId, items: [], keys: new Set(), total: 0, nextOffset: 0, loading: null, mounted: new Map(), indices: new WeakMap(), observer: null, resizeObserver: null, frameHandle: null, grid: null };
+  const state = { accountId: selection.accountId, kinId: selection.kinId, items: [], keys: new Set(), total: 0, nextOffset: 0, loading: null, mounted: new Map(), indices: new WeakMap(), observer: null, resizeObserver: null, frameHandle: null, grid: null, thumbnailQueue: [], thumbnailActive: 0 };
   imagesState = state; ++imagesVersion;
   return loadImages(state, 0);
 }

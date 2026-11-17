@@ -873,15 +873,28 @@ function validToken(provided, expected) {
   const a = Buffer.from(provided.slice(7)); const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
 }
-function readJson(req) {
+export function readJson(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
-    const chunks = []; let size = 0; let tooLarge = false;
-    req.on('data', (chunk) => { size += chunk.length; if (size > MAX_BODY) tooLarge = true; else chunks.push(chunk); });
+    const chunks = []; let size = 0; let finished = false;
+    const fail = (err) => { if (finished) return; finished = true; chunks.length = 0; reject(err); };
+    req.on('data', (chunk) => {
+      if (finished) return;
+      size += chunk.length;
+      if (size > limit) { fail(error(413, 'Request too large')); req.resume(); }
+      else chunks.push(chunk);
+    });
     req.on('end', () => {
-      if (tooLarge) return reject(error(413, 'Request too large'));
+      if (finished) return;
+      finished = true;
       try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(error(400, 'Invalid JSON')); }
     });
-    req.on('error', reject);
+    req.on('error', fail);
+    req.on('aborted', () => fail(error(400, 'Request aborted')));
+    // Reject a known oversized body immediately, without waiting for the sender.
+    const length = req.headers?.['content-length'];
+    if (typeof length === 'string' && /^\d+$/.test(length) && Number(length) > limit) {
+      fail(error(413, 'Request too large')); req.resume();
+    }
   });
 }
 function sendJson(res, status, value, headers = {}) {
@@ -1007,6 +1020,9 @@ export function createHttpServer({ archive, token, allowedHosts = ['127.0.0.1', 
       return sendJson(res, 404, { error: 'Not found' });
     } catch (e) {
       if (res.headersSent || res.destroyed) { if (!res.destroyed) res.destroy(e); return; }
+      // An oversized request may still be streaming. Send the 413 and close the
+      // connection instead of keeping it open for an arbitrary remaining body.
+      if (e.status === 413) { res.shouldKeepAlive = false; res.setHeader('Connection', 'close'); }
       if (!e.status) console.error('[KinExport] Server error:', e.message);
       return sendJson(res, e.status || 500, { error: e.status ? e.message : 'Internal server error' });
     }

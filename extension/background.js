@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, normalizeEndpoint, permissionFor, selectMissing, isCaptureMessage } from './common.js';
+import { DEFAULT_SETTINGS, normalizeEndpoint, permissionFor, selectMissing, isCaptureMessage, isKindroidImageUrl } from './common.js';
 import { extractImages } from './mhtml.js';
 
 const ext = globalThis.browser ?? globalThis.chrome;
@@ -14,6 +14,10 @@ async function getSettings() {
 async function stillCurrent(settings) {
   const current = await getSettings();
   return current.enabled && current.endpoint === settings.endpoint && current.token === settings.token;
+}
+async function sameConfiguration(settings) {
+  const current = await getSettings();
+  return current.enabled === settings.enabled && current.endpoint === settings.endpoint && current.token === settings.token;
 }
 async function getStatus() {
   return (await ext.storage.local.get('status')).status ?? { state: 'paused', failureSince: null, notified: false };
@@ -68,8 +72,10 @@ async function request(settings, path, payload) {
 async function verifyServer(settings) {
   if (!settings.token) throw new Error('Configure an archive access token.');
   if (!(await ext.permissions.contains({ origins: [permissionFor(settings.endpoint)] }))) throw new Error('Archive endpoint permission has not been granted.');
+  if (!(await sameConfiguration(settings))) throw new Error('Archiving settings changed.');
   const health = await request(settings, '/api/health');
   if (health?.status !== 'ok') throw new Error('Archive health check returned an unexpected response.');
+  if (!(await sameConfiguration(settings))) throw new Error('Archiving settings changed.');
   selectMissing([], await request(settings, '/api/probe', { messages: [] }));
 }
 async function checkConnection(force = false) {
@@ -158,7 +164,7 @@ async function saveJournal(accountId, kinId, entries) {
 // these URLs. Only explicitly matched image parts leave the snapshot in memory.
 async function captureMedia(tabId, urls) {
   const settings = await getSettings();
-  if (!settings.enabled || !Number.isInteger(tabId) || !Array.isArray(urls) || urls.length > 100 || urls.some(x => typeof x !== 'string' || x.length > 8192)) return { ok: false };
+  if (!settings.enabled || !Number.isInteger(tabId) || !Array.isArray(urls) || !urls.length || urls.length > 100 || !urls.every(isKindroidImageUrl)) return { ok: false };
   if (typeof ext.pageCapture?.saveAsMHTML !== 'function') return { ok: false, reason: 'unsupported' };
   try {
     const snapshot = await ext.pageCapture.saveAsMHTML({ tabId });

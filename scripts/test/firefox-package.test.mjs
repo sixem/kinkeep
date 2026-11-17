@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildFirefox } from '../build-firefox.mjs';
@@ -22,10 +22,25 @@ test('Firefox package contains its runtime files and browser-compatible permissi
     assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '140.0');
     const data = manifest.browser_specific_settings.gecko.data_collection_permissions.required;
     for (const category of ['authenticationInfo', 'personallyIdentifyingInfo', 'personalCommunications', 'websiteContent']) assert.ok(data.includes(category));
-    for (const file of [manifest.background.scripts[0], manifest.action.default_popup,
+    for (const file of [manifest.background.scripts[0], manifest.action.default_popup, 'popup.js', 'popup.css', 'common.js', 'mhtml.js', 'fonts/InterVariable.woff2',
       ...Object.values(manifest.icons), ...manifest.content_scripts.flatMap(script => script.js)]) {
       assert.ok((await stat(join(output, file))).isFile(), `${file} must be present`);
     }
     await assert.rejects(stat(join(output, 'test')));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Firefox package excludes unrelated local files', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kinexport-firefox-private-test-'));
+  try {
+    const input = join(dir, 'source'), output = join(dir, 'extension');
+    await cp(new URL('../../extension/', import.meta.url), input, { recursive: true });
+    await writeFile(join(input, 'local-debug.js'), 'synthetic private scratch data');
+    await writeFile(join(input, 'icons', 'local-private.png'), 'synthetic private image');
+    await writeFile(join(input, 'fonts', 'local-private.txt'), 'synthetic private notes');
+    await buildFirefox(output, input);
+    for (const file of ['local-debug.js', 'icons/local-private.png', 'fonts/local-private.txt']) {
+      await assert.rejects(stat(join(output, file)), { code: 'ENOENT' });
+    }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

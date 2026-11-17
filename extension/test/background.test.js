@@ -10,6 +10,8 @@ test('background validates token, probes batches, and warns once per outage', as
   let listener;
   let available = true;
   let pauseDuringProbe = false;
+  let changeDuringHealth = null;
+  let snapshots = 0;
   globalThis.chrome = {
     storage: { local: {
       get: async key => ({ [key]: structuredClone(store[key]) }),
@@ -18,7 +20,7 @@ test('background validates token, probes batches, and warns once per outage', as
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
     alarms: { create: async () => {}, clear: async () => {}, onAlarm: { addListener() {} } },
     notifications: { create: async (...args) => notices.push(args) },
-    pageCapture: { saveAsMHTML: async () => new Blob(['MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="x"\r\n\r\n--x\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-Location: https://img.kindroid.ai/a.png\r\n\r\nQUJD\r\n--x--\r\n']) },
+    pageCapture: { saveAsMHTML: async () => { snapshots++; return new Blob(['MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="x"\r\n\r\n--x\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-Location: https://img.kindroid.ai/a.png\r\n\r\nQUJD\r\n--x--\r\n']); } },
     permissions: { contains: async () => true },
     runtime: {
       id: 'extension-id', getURL: path => `chrome-extension://extension-id/${path}`,
@@ -29,7 +31,7 @@ test('background validates token, probes batches, and warns once per outage', as
   globalThis.fetch = async (url, options) => {
     requests.push({ url, ...options });
     if (!available) throw new Error('unreachable');
-    if (url.endsWith('/api/health')) return { ok: true, json: async () => ({ status: 'ok' }) };
+    if (url.endsWith('/api/health')) { if (changeDuringHealth) changeDuringHealth(); return { ok: true, json: async () => ({ status: 'ok' }) }; }
     assert.equal(options.headers.Authorization, 'Bearer secret');
     if (url.endsWith('/api/probe')) {
       const { messages } = JSON.parse(options.body);
@@ -48,6 +50,25 @@ test('background validates token, probes batches, and warns once per outage', as
   const tab = { id: 'extension-id', tab: { id: 12, url: 'https://kindroid.ai/chat' } };
   assert.deepEqual(await send({ type: 'checkConnection' }, popup), { ok: true });
   assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/probe']);
+  for (const change of [
+    () => { store.settings.enabled = false; },
+    () => { store.settings.endpoint = 'https://new.example'; },
+    () => { store.settings.token = 'new-token'; },
+  ]) {
+    requests.length = 0;
+    const original = structuredClone(store.settings);
+    changeDuringHealth = change;
+    assert.equal((await send({ type: 'checkConnection' }, popup)).ok, false);
+    assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health']);
+    store.settings = original;
+    changeDuringHealth = null;
+  }
+  // A manually requested connection test still works while archiving is paused.
+  requests.length = 0;
+  store.settings.enabled = false;
+  assert.deepEqual(await send({ type: 'checkConnection' }, popup), { ok: true });
+  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/probe']);
+  store.settings.enabled = true;
   requests.length = 0;
   assert.equal((await send({ type: 'inventory', account: { accountId: 'acct' }, kins: [{ accountId: 'acct', kinId: 'kin', name: 'Alex' }] }, tab)).ok, true);
   assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/accounts', '/api/kins']);
@@ -68,8 +89,13 @@ test('background validates token, probes batches, and warns once per outage', as
   assert.equal((await send({ type: 'journal', accountId: 'acct', kinId: 'kin', entries: [entry] }, tab)).ok, false);
   assert.equal(requests.length, 0);
   store.settings.enabled = true;
+  for (const url of ['https://evil.example/a.png', 'http://img.kindroid.ai/a.png', 'https://user:pass@kindroid.ai/a.png']) {
+    assert.equal((await send({ type: 'mediaSnapshot', urls: [url] }, tab)).ok, false);
+  }
+  assert.equal(snapshots, 0);
   const captured = await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.png'] }, tab);
   assert.deepEqual(captured, { ok: true, images: [{ url: 'https://img.kindroid.ai/a.png', mime: 'image/png', data: 'QUJD' }] });
+  assert.equal(snapshots, 1);
   assert.equal((await send({ type: 'mediaSave', accountId: 'acct', kinId: 'kin', items: [{ sourceId: 's', kind: 'selfie', variant: 'preview', mime: 'image/png', data: 'QUJD' }] }, tab)).ok, true);
   assert.equal(new URL(requests.at(-1).url).pathname, '/api/kins/media');
   const messages = [{ conversationId: 'c', fingerprint: 'a', content: 'one' }, { conversationId: 'c', fingerprint: 'b', content: 'two' }];

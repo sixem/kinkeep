@@ -7,11 +7,13 @@ KinExport is an early-stage local archive. Changes should preserve existing arch
 Use Node.js 24 or newer and ImageMagick 7 with WebP support (`magick`) for the complete test suite. From the project root:
 
 ```sh
-npm ci --prefix server
+npm ci --prefix server --ignore-scripts
 npm run check
 ```
 
 The root check validates the version and extension manifest files, checks JavaScript syntax, and runs both test suites. Load `extension/` as an unpacked extension in Chrome or Brave. For Firefox, run `npm run build:firefox` and load `dist/firefox/manifest.json` as a temporary add-on in `about:debugging`. Rebuild and reload the Firefox package after extension changes; refresh the Kindroid tab to load updated content scripts. Use `./setup.sh` to manage the Docker server. The root README covers setup and backups.
+
+The Firefox build includes manifest assets and an explicit list of other runtime resources in `scripts/build-firefox.mjs`. Add new imports or popup assets to that list so they are included without packaging unrelated local files.
 
 With Docker and Compose v2 available, `./scripts/smoke-docker.sh` builds and tests an isolated container using synthetic data. It checks health, thumbnail generation, ZIP import/export and SQLite backup/restore, then cleans up its own temporary resources.
 

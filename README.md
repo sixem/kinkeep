@@ -64,6 +64,6 @@ The database is stored in a Docker named volume, so replacing the container pres
 
 ## Development and reference
 
-The project has separate [`extension/`](extension/) and [`server/`](server/) components. To run the full local checks, install Node.js 24 or newer, install server dependencies with `npm ci --prefix server`, then run `npm run check` from the project root. See [CONTRIBUTING.md](CONTRIBUTING.md) for development details, the [release guide](docs/RELEASING.md) for release checks, the [extension README](extension/README.md) for capture behavior, and the [server README](server/README.md) for configuration and API endpoints.
+The project has separate [`extension/`](extension/) and [`server/`](server/) components. To run the full local checks, install Node.js 24 or newer, install server dependencies with `npm ci --prefix server --ignore-scripts`, then run `npm run check` from the project root. See [CONTRIBUTING.md](CONTRIBUTING.md) for development details, the [release guide](docs/RELEASING.md) for release checks, the [extension README](extension/README.md) for capture behavior, and the [server README](server/README.md) for configuration and API endpoints.
 
 The default Docker setup publishes the server only on host loopback. This is a local application, not a public multi-user service; deploying it beyond the local machine requires a separate security and transport design.

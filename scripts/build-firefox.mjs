@@ -1,13 +1,14 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { cp, lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = join(root, 'extension');
 const defaultOutput = join(root, 'dist', 'firefox');
 
-export async function buildFirefox(output = defaultOutput) {
-  const manifest = JSON.parse(await readFile(join(source, 'manifest.json'), 'utf8'));
+export async function buildFirefox(output = defaultOutput, sourceDirectory = source) {
+  const sourceRoot = await realpath(sourceDirectory);
+  const manifest = JSON.parse(await readFile(join(sourceRoot, 'manifest.json'), 'utf8'));
 
   // Firefox uses an event-page background and has no Chrome pageCapture API.
   // Keep the source manifest and unpacked Chromium extension unchanged.
@@ -24,12 +25,28 @@ export async function buildFirefox(output = defaultOutput) {
     },
   };
 
+  // Only bundle known runtime resources, not arbitrary local files that happen
+  // to be in the development directory. Add new imported assets here.
+  const files = new Set([
+    ...manifest.background.scripts,
+    ...manifest.content_scripts.flatMap(script => [...(script.js ?? []), ...(script.css ?? [])]),
+    manifest.action.default_popup,
+    ...Object.values(manifest.action.default_icon ?? {}),
+    ...Object.values(manifest.icons ?? {}),
+    'popup.js', 'popup.css', 'common.js', 'mhtml.js',
+    'fonts/InterVariable.woff2', 'fonts/INTER-LICENSE.txt',
+  ]);
   await rm(output, { recursive: true, force: true });
   await mkdir(output, { recursive: true });
-  for (const entry of await readdir(source, { withFileTypes: true })) {
-    const include = entry.isFile() && /\.(?:js|html|css)$/.test(entry.name) ||
-      entry.isDirectory() && ['icons', 'fonts'].includes(entry.name);
-    if (include) await cp(join(source, entry.name), join(output, entry.name), { recursive: true });
+  for (const file of files) {
+    if (typeof file !== 'string' || !file) throw new Error('Invalid extension asset path');
+    const input = resolve(sourceRoot, file), destination = resolve(output, file);
+    if (!input.startsWith(sourceRoot + sep) || !destination.startsWith(resolve(output) + sep) ||
+        !(await lstat(input)).isFile() || !(await realpath(input)).startsWith(sourceRoot + sep)) {
+      throw new Error(`Invalid extension asset: ${file}`);
+    }
+    await mkdir(dirname(destination), { recursive: true });
+    await cp(input, destination);
   }
   await writeFile(join(output, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   return output;

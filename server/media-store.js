@@ -3,6 +3,7 @@ import { createThumbnail } from './thumbnail.js';
 
 const MAX_IMAGE = 8 * 1024 * 1024;
 const MAX_BATCH = 8;
+const MAX_PENDING_THUMBNAILS = 64;
 const fail = (message) => { throw Object.assign(new Error(message), { status: 400 }); };
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const id = value => typeof value === 'string' && value.trim() && value.length <= 2048;
@@ -38,7 +39,7 @@ function validateItem(raw, importing = false) {
   const bytes = image(raw.data, raw.mime);
   return { ...out, bytes, mime: raw.mime, sha256: hash(bytes) };
 }
-export function createMediaStore(db, { requireScope, transact }) {
+export function createMediaStore(db, { requireScope, transact, generateThumbnail = createThumbnail }) {
   db.exec(`CREATE TABLE IF NOT EXISTS media_blobs(sha256 TEXT PRIMARY KEY,mime TEXT NOT NULL,bytes BLOB NOT NULL);
   CREATE TABLE IF NOT EXISTS media_thumbnails(sha256 TEXT PRIMARY KEY,bytes BLOB NOT NULL,FOREIGN KEY(sha256) REFERENCES media_blobs(sha256));
   CREATE TABLE IF NOT EXISTS media_items(account_id TEXT NOT NULL,kin_id TEXT NOT NULL,kind TEXT NOT NULL,source_id TEXT NOT NULL,variant TEXT NOT NULL,sha256 TEXT NOT NULL,created_at TEXT,prompt TEXT,message_id TEXT,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,PRIMARY KEY(account_id,kin_id,kind,source_id,variant,sha256),FOREIGN KEY(account_id,kin_id) REFERENCES kins(account_id,kin_id),FOREIGN KEY(sha256) REFERENCES media_blobs(sha256));
@@ -46,6 +47,7 @@ export function createMediaStore(db, { requireScope, transact }) {
   CREATE INDEX IF NOT EXISTS media_items_recent ON media_items(account_id,kin_id,COALESCE(created_at,first_seen) DESC,source_id,variant,sha256);`);
   const addBlob = db.prepare('INSERT OR IGNORE INTO media_blobs(sha256,mime,bytes) VALUES(?,?,?)');
   const getBlob = db.prepare('SELECT mime,bytes FROM media_blobs WHERE sha256=?');
+  const hasBlob = db.prepare('SELECT 1 FROM media_blobs WHERE sha256=?');
   const add = db.prepare(`INSERT INTO media_items(account_id,kin_id,kind,source_id,variant,sha256,created_at,prompt,message_id,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(account_id,kin_id,kind,source_id,variant,sha256) DO UPDATE SET last_seen=max(last_seen,excluded.last_seen),first_seen=min(first_seen,excluded.first_seen),prompt=COALESCE(prompt,excluded.prompt),message_id=COALESCE(message_id,excluded.message_id)`);
   function saveInside(scope, items, importing = false) {
     requireScope(scope); const now = new Date().toISOString(); let inserted = 0;
@@ -71,7 +73,13 @@ export function createMediaStore(db, { requireScope, transact }) {
   function runThumbnailQueue() {
     while (activeThumbnails < 3 && thumbnailQueue.length) {
       const job = thumbnailQueue.shift(); activeThumbnails++;
-      createThumbnail(job.bytes).then(bytes => {
+      // Load at most the active images into memory. Queued requests keep only
+      // a digest, rather than retaining up to 8 MiB each while waiting.
+      Promise.resolve().then(() => {
+        const original = blob(job.sha256);
+        return original ? generateThumbnail(original.bytes) : null;
+      }).then(bytes => {
+        if (!bytes) { job.resolve(null); return; }
         db.prepare('INSERT OR IGNORE INTO media_thumbnails(sha256,bytes) VALUES(?,?)').run(job.sha256, bytes);
         job.resolve({ mime: 'image/webp', bytes });
       }).catch(job.reject).finally(() => { activeThumbnails--; pendingThumbnails.delete(job.sha256); runThumbnailQueue(); });
@@ -82,8 +90,9 @@ export function createMediaStore(db, { requireScope, transact }) {
     const existing = db.prepare('SELECT bytes FROM media_thumbnails WHERE sha256=?').get(sha256);
     if (existing) return Promise.resolve({ mime:'image/webp', bytes:Buffer.from(existing.bytes) });
     if (pendingThumbnails.has(sha256)) return pendingThumbnails.get(sha256);
-    const original = blob(sha256); if (!original) return Promise.resolve(null);
-    const task = new Promise((resolve,reject) => thumbnailQueue.push({ sha256, bytes:original.bytes, resolve, reject }));
+    if (!hasBlob.get(sha256)) return Promise.resolve(null);
+    if (pendingThumbnails.size >= MAX_PENDING_THUMBNAILS) throw Object.assign(new Error('Thumbnail generation is busy. Please retry.'), { status: 503 });
+    const task = new Promise((resolve,reject) => thumbnailQueue.push({ sha256, resolve, reject }));
     pendingThumbnails.set(sha256, task); runThumbnailQueue(); return task;
   }
   function count() { return db.prepare('SELECT count(*) AS n FROM media_items').get().n; }

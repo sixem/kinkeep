@@ -13,6 +13,15 @@ export function permissionFor(endpoint) {
   return `${url.protocol}//${url.hostname}/*`;
 }
 
+export function isKindroidImageUrl(value) {
+  if (typeof value !== 'string' || !value || value.length > 8192) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password &&
+      (url.hostname === 'kindroid.ai' || url.hostname.endsWith('.kindroid.ai'));
+  } catch { return false; }
+}
+
 export function selectMissing(messages, response) {
   if (!Array.isArray(response?.results) || response.results.length !== messages.length) {
     throw new Error('The archive returned an invalid probe response.');

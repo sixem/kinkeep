@@ -9,7 +9,7 @@ Keep the application version synchronized in `package.json`, `server/package.jso
 With Node.js 24 or newer and ImageMagick 7 with WebP support installed, run from the project root:
 
 ```sh
-npm ci --prefix server
+npm ci --prefix server --ignore-scripts
 npm run check
 ```
 
