@@ -9,12 +9,14 @@ permissions:
 
 jobs:
   check:
-    runs-on: kinexport
+    runs-on: node24-debian-13
     container:
-      image: node:24-alpine
+      image: node:24-trixie
     steps:
       - name: Install test dependencies
-        run: apk add --no-cache git bash imagemagick imagemagick-jpeg imagemagick-webp
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git imagemagick
       - uses: actions/checkout@v4
       - name: Check project and tests
         run: |
