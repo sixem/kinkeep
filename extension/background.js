@@ -69,14 +69,32 @@ async function request(settings, path, payload) {
   if (!response.ok) throw new Error(`Archive returned HTTP ${response.status}.`);
   return response.json();
 }
+async function verifyStep(stage, action) {
+  try { return await action(); }
+  catch (error) {
+    // Do not forward arbitrary fetch or JSON parsing errors: they may contain
+    // server response data. Only report a safe category and the check's stage.
+    const message = typeof error?.message === 'string' ? error.message : '';
+    const httpStatus = /^Archive returned HTTP ([1-5]\d\d)\.$/.exec(message);
+    const detail = httpStatus ? `Archive returned HTTP ${httpStatus[1]}.`
+      : error?.name === 'TimeoutError' || /timed out|timeout/i.test(message) ? 'Connection timed out.'
+      : error?.name === 'SyntaxError' || /^(Archive health check returned an unexpected response\.|The archive returned an (invalid probe response|unknown probe status)\.)$/.test(message) ? 'Unexpected server response.'
+      : 'Connection failed.';
+    throw new Error(`${stage}: ${detail}`);
+  }
+}
 async function verifyServer(settings) {
   if (!settings.token) throw new Error('Configure an archive access token.');
   if (!(await ext.permissions.contains({ origins: [permissionFor(settings.endpoint)] }))) throw new Error('Archive endpoint permission has not been granted.');
   if (!(await sameConfiguration(settings))) throw new Error('Archiving settings changed.');
-  const health = await request(settings, '/api/health');
-  if (health?.status !== 'ok') throw new Error('Archive health check returned an unexpected response.');
+  await verifyStep('Health check', async () => {
+    const health = await request(settings, '/api/health');
+    if (health?.status !== 'ok') throw new Error('Archive health check returned an unexpected response.');
+  });
   if (!(await sameConfiguration(settings))) throw new Error('Archiving settings changed.');
-  selectMissing([], await request(settings, '/api/probe', { messages: [] }));
+  await verifyStep('Authenticated probe', async () => {
+    selectMissing([], await request(settings, '/api/probe', { messages: [] }));
+  });
 }
 async function checkConnection(force = false) {
   const settings = await getSettings();

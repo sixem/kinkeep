@@ -11,6 +11,7 @@ test('background validates token, probes batches, and warns once per outage', as
   let available = true;
   let pauseDuringProbe = false;
   let changeDuringHealth = null;
+  let failure = null;
   let snapshots = 0;
   globalThis.chrome = {
     storage: { local: {
@@ -30,6 +31,10 @@ test('background validates token, probes batches, and warns once per outage', as
   };
   globalThis.fetch = async (url, options) => {
     requests.push({ url, ...options });
+    if (failure && url.endsWith(failure.path)) {
+      if (failure.error) throw failure.error;
+      return failure.response;
+    }
     if (!available) throw new Error('unreachable');
     if (url.endsWith('/api/health')) { if (changeDuringHealth) changeDuringHealth(); return { ok: true, json: async () => ({ status: 'ok' }) }; }
     assert.equal(options.headers.Authorization, 'Bearer secret');
@@ -50,6 +55,22 @@ test('background validates token, probes batches, and warns once per outage', as
   const tab = { id: 'extension-id', tab: { id: 12, url: 'https://kindroid.ai/chat' } };
   assert.deepEqual(await send({ type: 'checkConnection' }, popup), { ok: true });
   assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/probe']);
+  for (const [scenario, expected] of [
+    [{ path: '/api/health', error: new TypeError('network private-token') }, 'Health check: Connection failed.'],
+    [{ path: '/api/probe', error: new TypeError('network private-token') }, 'Authenticated probe: Connection failed.'],
+    [{ path: '/api/health', error: Object.assign(new Error('private-token'), { name: 'TimeoutError' }) }, 'Health check: Connection timed out.'],
+    [{ path: '/api/probe', response: { ok: false, status: 401 } }, 'Authenticated probe: Archive returned HTTP 401.'],
+    [{ path: '/api/health', response: { ok: false, status: 503 } }, 'Health check: Archive returned HTTP 503.'],
+    [{ path: '/api/probe', response: { ok: true, json: async () => { throw new SyntaxError('private-token'); } } }, 'Authenticated probe: Unexpected server response.'],
+    [{ path: '/api/health', response: { ok: true, json: async () => ({ wrong: true }) } }, 'Health check: Unexpected server response.'],
+    [{ path: '/api/probe', response: { ok: true, json: async () => ({ results: 'private-token' }) } }, 'Authenticated probe: Unexpected server response.'],
+  ]) {
+    failure = scenario;
+    const result = await send({ type: 'checkConnection' }, popup);
+    assert.deepEqual(result, { ok: false, reason: expected });
+    assert.doesNotMatch(JSON.stringify(store.status), /private-token/);
+  }
+  failure = null;
   for (const change of [
     () => { store.settings.enabled = false; },
     () => { store.settings.endpoint = 'https://new.example'; },
