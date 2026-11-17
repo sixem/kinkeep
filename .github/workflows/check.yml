@@ -13,6 +13,11 @@ jobs:
     container:
       image: node:24-trixie
     steps:
+      - name: Verify container socket is unavailable
+        run: |
+          test ! -S /var/run/docker.sock
+          test ! -S /run/podman/podman.sock
+          test -z "${DOCKER_HOST:-}"
       - name: Install test dependencies
         run: |
           apt-get update -qq
