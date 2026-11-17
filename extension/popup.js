@@ -14,10 +14,37 @@ const indicator = document.querySelector('#indicator');
 const captureStatus = document.querySelector('#capture-status');
 const mediaStatus = document.querySelector('#media-status');
 let settings = { ...DEFAULT_SETTINGS, ...(await ext.storage.local.get('settings')).settings };
+// A browser permission prompt can close the popup before its promise resolves.
+// Keep the submitted values in memory across popup instances, not on disk.
+const draftKey = 'pendingArchiveSettings';
+let draft;
+try { draft = (await ext.storage.session.get(draftKey))[draftKey]; } catch { /* Continue with the last saved settings. */ }
+let recovered = false;
+let recoveryFailed = false;
+if (draft) {
+  try {
+    const normalized = normalizeEndpoint(draft.endpoint);
+    if (typeof draft.token !== 'string') throw new Error('Invalid draft');
+    draft = { endpoint: normalized, token: draft.token };
+    if (await ext.permissions.contains({ origins: [permissionFor(normalized)] })) {
+      const recoveredSettings = { ...settings, ...draft };
+      await ext.storage.local.set({ settings: recoveredSettings });
+      settings = recoveredSettings;
+      await ext.storage.session.remove(draftKey);
+      draft = null;
+      recovered = true;
+    }
+  } catch {
+    // Keep a valid draft available for another save attempt if storage fails.
+    recoveryFailed = true;
+  }
+}
 let lastCaptureStatus = {};
 enabled.checked = settings.enabled;
-endpoint.value = settings.endpoint;
-token.value = settings.token;
+endpoint.value = draft?.endpoint ?? settings.endpoint;
+token.value = draft?.token ?? settings.token;
+if (draft) feedback.textContent = recoveryFailed ? 'Could not finish saving settings. Try again.' : 'Allow access and save settings to finish.';
+else if (recovered) feedback.textContent = 'Settings saved.';
 function setLink() {
   try { open.href = normalizeEndpoint(settings.endpoint) + '/'; } catch { open.removeAttribute('href'); }
 }
@@ -55,21 +82,27 @@ async function send(type) {
 }
 const capabilities = await send('capabilities');
 if (capabilities?.imageCapture === false) mediaStatus.textContent = 'Image archiving is unavailable in this browser.';
-async function persist() { await ext.storage.local.set({ settings }); await send('settingsChanged'); }
+if (recovered) await send('settingsChanged');
+async function persist(next = settings) { await ext.storage.local.set({ settings: next }); settings = next; await send('settingsChanged'); }
 enabled.addEventListener('change', async () => {
-  settings.enabled = enabled.checked;
   renderCapture(lastCaptureStatus);
-  await persist();
+  await persist({ ...settings, enabled: enabled.checked });
 });
 form.addEventListener('submit', async event => {
   event.preventDefault();
   feedback.textContent = '';
   try {
     const normalized = normalizeEndpoint(endpoint.value);
-    // Permission must be requested directly from this user gesture.
-    if (!(await ext.permissions.request({ origins: [permissionFor(normalized)] }))) throw new Error('Permission was not granted.');
-    settings = { ...settings, endpoint: normalized, token: token.value.trim() };
-    await persist();
+    const submitted = { endpoint: normalized, token: token.value.trim() };
+    // Begin the session write before requesting permission, but do not await it:
+    // permissions.request must still run directly in this user gesture.
+    const saveDraft = ext.storage.session.set({ [draftKey]: submitted });
+    const requestPermission = ext.permissions.request({ origins: [permissionFor(normalized)] });
+    const [, permission] = await Promise.allSettled([saveDraft, requestPermission]);
+    if (permission.status === 'rejected') throw permission.reason;
+    if (!permission.value) throw new Error('Permission was not granted. Allow access and save settings to finish.');
+    await persist({ ...settings, ...submitted });
+    await ext.storage.session.remove(draftKey);
     endpoint.value = normalized;
     setLink();
     feedback.textContent = 'Settings saved.';

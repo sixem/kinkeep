@@ -12,7 +12,7 @@ test('connection feedback distinguishes actionable failures without exposing sec
   let messages = 0;
   globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
   globalThis.browser = {
-    storage: { local: { get: async key => ({ [key]: key === 'settings' ? settings : undefined }), set: async () => {} }, onChanged: { addListener() {} } },
+    storage: { local: { get: async key => ({ [key]: key === 'settings' ? settings : undefined }), set: async () => {} }, session: { get: async () => ({}), set: async () => {}, remove: async () => {} }, onChanged: { addListener() {} } },
     runtime: { sendMessage: async ({ type }) => { if (type === 'checkConnection') { messages++; if (result instanceof Error) throw result; return result; } return {}; } },
   };
   try {
@@ -58,6 +58,152 @@ test('connection feedback distinguishes actionable failures without exposing sec
     await click();
     assert.match(feedback(), /Extension did not respond/);
     assert.doesNotMatch(feedback(), /private-token/);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.browser;
+  }
+});
+
+test('permission prompt preserves submitted settings without changing active configuration until approved', async () => {
+  const saved = { enabled: true, endpoint: 'http://127.0.0.1:8765', token: 'old-token' };
+  const local = { settings: saved };
+  const session = {};
+  let finishPrompt;
+  let finishWrite;
+  let granted = false;
+  let calls = [];
+  const makeElements = () => Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, {
+    value: '', textContent: '', checked: false, handlers: {},
+    addEventListener(type, handler) { this.handlers[type] = handler; },
+    removeAttribute() {},
+  }]));
+  let elements = makeElements();
+  const area = object => ({
+    get: async key => ({ [key]: object[key] }),
+    set: async values => { Object.assign(object, structuredClone(values)); },
+    remove: async key => { delete object[key]; },
+  });
+  const sessionArea = area(session);
+  const writeDraft = sessionArea.set;
+  sessionArea.set = values => { calls.push('write draft'); return new Promise(resolve => { finishWrite = async () => { await writeDraft(values); resolve(); }; }); };
+  globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
+  globalThis.browser = {
+    storage: { local: area(local), session: sessionArea, onChanged: { addListener() {} } },
+    permissions: {
+      contains: async () => granted,
+      request: () => { calls.push('request permission'); return new Promise(resolve => { finishPrompt = resolve; }); },
+    },
+    runtime: { sendMessage: async () => ({ ok: true }) },
+  };
+  try {
+    await import('../popup.js?permission-before');
+    elements.endpoint.value = 'http://localhost:9999';
+    elements.token.value = 'new-token';
+    const pending = elements['settings-form'].handlers.submit({ preventDefault() {} });
+    assert.deepEqual(calls, ['write draft', 'request permission']);
+    assert.deepEqual(local.settings, saved);
+    assert.equal(session.pendingArchiveSettings, undefined);
+    // The write may finish after the originating popup is closed.
+    await finishWrite();
+    assert.deepEqual(session.pendingArchiveSettings, { endpoint: 'http://localhost:9999', token: 'new-token' });
+
+    // The permission prompt can close the popup, so its pending handler may
+    // never resume. Reopening after approval must finish saving the draft.
+    granted = true;
+    elements = makeElements();
+    await import('../popup.js?permission-after');
+    assert.deepEqual(local.settings, { enabled: true, endpoint: 'http://localhost:9999', token: 'new-token' });
+    assert.equal(session.pendingArchiveSettings, undefined);
+    assert.equal(elements.token.value, 'new-token');
+    assert.equal(elements.feedback.textContent, 'Settings saved.');
+    finishPrompt(true);
+    await pending;
+  } finally {
+    delete globalThis.document;
+    delete globalThis.browser;
+  }
+});
+
+test('denying permission preserves the draft and keeps the active settings', async () => {
+  const saved = { enabled: false, endpoint: 'http://127.0.0.1:8765', token: 'old-token' };
+  const local = { settings: saved };
+  const session = {};
+  let finishPrompt;
+  const area = object => ({ get: async key => ({ [key]: object[key] }), set: async values => Object.assign(object, structuredClone(values)), remove: async key => { delete object[key]; } });
+  const makeElements = () => Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
+  let elements = makeElements();
+  globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
+  globalThis.browser = {
+    storage: { local: area(local), session: area(session), onChanged: { addListener() {} } },
+    permissions: { contains: async () => false, request: () => new Promise(resolve => { finishPrompt = resolve; }) },
+    runtime: { sendMessage: async () => ({ ok: true }) },
+  };
+  try {
+    await import('../popup.js?permission-denied-before');
+    elements.endpoint.value = 'http://localhost:9999';
+    elements.token.value = 'new-token';
+    const pending = elements['settings-form'].handlers.submit({ preventDefault() {} });
+    assert.deepEqual(local.settings, saved);
+    elements = makeElements();
+    await import('../popup.js?permission-denied-after');
+    assert.deepEqual(local.settings, saved);
+    assert.equal(elements.endpoint.value, 'http://localhost:9999');
+    assert.equal(elements.token.value, 'new-token');
+    assert.match(elements.feedback.textContent, /Allow access/);
+    finishPrompt(false);
+    await pending;
+  } finally {
+    delete globalThis.document;
+    delete globalThis.browser;
+  }
+});
+
+test('settings still save if temporary draft storage fails and permission is granted', async () => {
+  const local = { settings: { enabled: false, endpoint: 'http://127.0.0.1:8765', token: 'old-token' } };
+  const elements = Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
+  globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
+  globalThis.browser = {
+    storage: {
+      local: { get: async key => ({ [key]: local[key] }), set: async value => Object.assign(local, structuredClone(value)) },
+      session: { get: async () => ({}), set: async () => { throw new Error('Session storage unavailable'); }, remove: async () => {} },
+      onChanged: { addListener() {} },
+    },
+    permissions: { request: async () => true },
+    runtime: { sendMessage: async () => ({ ok: true }) },
+  };
+  try {
+    await import('../popup.js?session-write-failure');
+    elements.endpoint.value = 'http://localhost:9999';
+    elements.token.value = 'new-token';
+    await elements['settings-form'].handlers.submit({ preventDefault() {} });
+    assert.deepEqual(local.settings, { enabled: false, endpoint: 'http://localhost:9999', token: 'new-token' });
+    assert.equal(elements.feedback.textContent, 'Settings saved.');
+  } finally {
+    delete globalThis.document;
+    delete globalThis.browser;
+  }
+});
+
+test('failed recovery keeps the active configuration and reports the draft as unsaved', async () => {
+  const saved = { enabled: true, endpoint: 'http://127.0.0.1:8765', token: 'old-token' };
+  const draft = { endpoint: 'http://localhost:9999', token: 'new-token' };
+  const elements = Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
+  globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
+  globalThis.browser = {
+    storage: {
+      local: { get: async key => ({ [key]: key === 'settings' ? saved : undefined }), set: async () => { throw new Error('Storage unavailable'); } },
+      session: { get: async () => ({ pendingArchiveSettings: draft }), remove: async () => {} },
+      onChanged: { addListener() {} },
+    },
+    permissions: { contains: async () => true },
+    runtime: { sendMessage: async () => ({ ok: true }) },
+  };
+  try {
+    await import('../popup.js?failed-recovery');
+    assert.equal(elements.token.value, 'new-token');
+    assert.match(elements.feedback.textContent, /Could not finish saving/);
+    await elements.test.handlers.click();
+    assert.match(elements.feedback.textContent, /Save settings before testing/);
   } finally {
     delete globalThis.document;
     delete globalThis.browser;
