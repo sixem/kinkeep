@@ -23,4 +23,4 @@ Run `./scripts/smoke-docker.sh` with Docker and Compose v2 to build and exercise
 
 ## Extension distribution
 
-The current development workflow loads `extension/` directly as an unpacked Chromium extension. It has no build step and is not the same as a signed, reviewed or published browser-store release. A public distribution would require its own packaging, review, permissions and publication process; none is assumed by this guide.
+The development workflow loads `extension/` directly as an unpacked Chromium extension, or builds the Firefox package with `npm run build:firefox` and loads it as a temporary add-on. Neither is a signed, reviewed or published browser-store release. A permanent Firefox installation requires Mozilla signing; public distribution would require its own packaging, review, permissions and publication process. None is assumed by this guide.

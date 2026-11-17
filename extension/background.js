@@ -1,31 +1,33 @@
 import { DEFAULT_SETTINGS, normalizeEndpoint, permissionFor, selectMissing, isCaptureMessage } from './common.js';
 import { extractImages } from './mhtml.js';
 
+const ext = globalThis.browser ?? globalThis.chrome;
+
 const ALARM = 'kinexport-health';
 const FAILURE_DEBOUNCE_MS = 15_000;
 const MAX_BATCH = 100;
 let monitoring = null;
 
 async function getSettings() {
-  return { ...DEFAULT_SETTINGS, ...(await chrome.storage.local.get('settings')).settings };
+  return { ...DEFAULT_SETTINGS, ...(await ext.storage.local.get('settings')).settings };
 }
 async function stillCurrent(settings) {
   const current = await getSettings();
   return current.enabled && current.endpoint === settings.endpoint && current.token === settings.token;
 }
 async function getStatus() {
-  return (await chrome.storage.local.get('status')).status ?? { state: 'paused', failureSince: null, notified: false };
+  return (await ext.storage.local.get('status')).status ?? { state: 'paused', failureSince: null, notified: false };
 }
 async function setStatus(status) {
-  await chrome.storage.local.set({ status });
-  const capture = (await chrome.storage.local.get('captureStatus')).captureStatus;
+  await ext.storage.local.set({ status });
+  const capture = (await ext.storage.local.get('captureStatus')).captureStatus;
   const badge = status.state === 'online' ? (['identity-uncertain', 'ambiguous-messages'].includes(capture?.state) ? '?' : '') : status.state === 'paused' ? 'OFF' : status.state === 'checking' ? '…' : '!';
-  await chrome.action.setBadgeText({ text: badge });
-  await chrome.action.setBadgeBackgroundColor({ color: status.state === 'paused' ? '#64748b' : '#c2410c' });
-  await chrome.action.setTitle({ title: `KinExport: ${status.state}` });
+  await ext.action.setBadgeText({ text: badge });
+  await ext.action.setBadgeBackgroundColor({ color: status.state === 'paused' ? '#64748b' : '#c2410c' });
+  await ext.action.setTitle({ title: `KinExport: ${status.state}` });
 }
 async function paused() {
-  await chrome.alarms.clear(ALARM);
+  await ext.alarms.clear(ALARM);
   await setStatus({ state: 'paused', failureSince: null, notified: false });
 }
 async function fail(reason) {
@@ -35,7 +37,7 @@ async function fail(reason) {
   let notified = previous.notified ?? false;
   if (!notified && now - failureSince >= FAILURE_DEBOUNCE_MS) {
     try {
-      await chrome.notifications.create('kinexport-unavailable', {
+      await ext.notifications.create('kinexport-unavailable', {
         type: 'basic', iconUrl: 'icons/icon128.png', title: 'KinExport archive unavailable',
         message: 'Messages seen while the archive is unavailable may not be saved. Open KinExport to check your connection.',
       });
@@ -44,12 +46,12 @@ async function fail(reason) {
   }
   await setStatus({ state: 'offline', reason, failureSince, notified });
   const delay = Math.min((previous.retryDelayMinutes ?? 0.25) * 2, 5);
-  await chrome.storage.local.set({ status: { ...(await getStatus()), retryDelayMinutes: delay } });
-  await chrome.alarms.create(ALARM, { delayInMinutes: delay });
+  await ext.storage.local.set({ status: { ...(await getStatus()), retryDelayMinutes: delay } });
+  await ext.alarms.create(ALARM, { delayInMinutes: delay });
 }
 async function online() {
   await setStatus({ state: 'online', failureSince: null, notified: false, checkedAt: Date.now() });
-  await chrome.alarms.create(ALARM, { delayInMinutes: 0.5 });
+  await ext.alarms.create(ALARM, { delayInMinutes: 0.5 });
 }
 async function request(settings, path, payload) {
   const endpoint = normalizeEndpoint(settings.endpoint);
@@ -65,7 +67,7 @@ async function request(settings, path, payload) {
 }
 async function verifyServer(settings) {
   if (!settings.token) throw new Error('Configure an archive access token.');
-  if (!(await chrome.permissions.contains({ origins: [permissionFor(settings.endpoint)] }))) throw new Error('Archive endpoint permission has not been granted.');
+  if (!(await ext.permissions.contains({ origins: [permissionFor(settings.endpoint)] }))) throw new Error('Archive endpoint permission has not been granted.');
   const health = await request(settings, '/api/health');
   if (health?.status !== 'ok') throw new Error('Archive health check returned an unexpected response.');
   selectMissing([], await request(settings, '/api/probe', { messages: [] }));
@@ -157,8 +159,9 @@ async function saveJournal(accountId, kinId, entries) {
 async function captureMedia(tabId, urls) {
   const settings = await getSettings();
   if (!settings.enabled || !Number.isInteger(tabId) || !Array.isArray(urls) || urls.length > 100 || urls.some(x => typeof x !== 'string' || x.length > 8192)) return { ok: false };
+  if (typeof ext.pageCapture?.saveAsMHTML !== 'function') return { ok: false, reason: 'unsupported' };
   try {
-    const snapshot = await chrome.pageCapture.saveAsMHTML({ tabId });
+    const snapshot = await ext.pageCapture.saveAsMHTML({ tabId });
     if (!snapshot || snapshot.size > 40 * 1024 * 1024 || !(await stillCurrent(settings))) return { ok: false };
     const images = extractImages(await snapshot.text(), urls);
     return { ok: true, images: [...images].map(([url, value]) => ({ url, ...value })) };
@@ -199,16 +202,23 @@ async function saveBatch(accountId, kinId, messages) {
     return { ok: false, reason };
   }
 }
-function isPopup(sender) { return sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL('popup.html'); }
+function isPopup(sender) { return sender.id === ext.runtime.id && sender.url === ext.runtime.getURL('popup.html'); }
 function isKindroid(sender) {
-  if (sender.id !== chrome.runtime.id || !sender.tab?.url) return false;
-  try { const url = new URL(sender.tab.url); return url.protocol === 'https:' && url.hostname === 'kindroid.ai'; } catch { return false; }
+  if (sender.id !== ext.runtime.id || !sender.tab || (sender.frameId !== undefined && sender.frameId !== 0)) return false;
+  // Firefox may omit tab.url without the tabs permission; sender.url still
+  // identifies the originating content script. Validate every URL available.
+  const urls = [sender.url, sender.tab.url].filter(url => typeof url === 'string' && url.length);
+  if (!urls.length) return false;
+  try { return urls.every(value => { const url = new URL(value); return url.protocol === 'https:' && url.hostname === 'kindroid.ai'; }); } catch { return false; }
 }
-chrome.runtime.onMessage.addListener((message, sender, respond) => {
+ext.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'capabilities' && (isPopup(sender) || isKindroid(sender))) {
+    respond({ imageCapture: typeof ext.pageCapture?.saveAsMHTML === 'function' }); return true;
+  }
   if (message?.type === 'checkConnection' && isPopup(sender)) { checkConnection(true).then(respond); return true; }
   if (message?.type === 'settingsChanged' && isPopup(sender)) { checkConnection().then(respond); return true; }
   if (message?.type === 'captureStatus' && isKindroid(sender) && ['ready', 'waiting', 'identity-uncertain', 'ambiguous-messages', 'paused'].includes(message.state)) {
-    (async () => { await chrome.storage.local.set({ captureStatus: { state: message.state } }); await setStatus(await getStatus()); return { ok: true }; })().then(respond); return true;
+    (async () => { await ext.storage.local.set({ captureStatus: { state: message.state } }); await setStatus(await getStatus()); return { ok: true }; })().then(respond); return true;
   }
   if (message?.type === 'inventory' && isKindroid(sender)) { saveInventory(message.account, message.kins).then(respond); return true; }
   if (message?.type === 'profile' && isKindroid(sender)) { saveProfile(message.profile).then(respond); return true; }
@@ -218,6 +228,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === 'captureBatch' && isKindroid(sender)) { saveBatch(message.accountId, message.kinId, message.messages).then(respond); return true; }
   return false;
 });
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) void monitor(); });
-chrome.runtime.onStartup.addListener(() => { void monitor(); });
-chrome.runtime.onInstalled.addListener(() => { void monitor(); });
+ext.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) void monitor(); });
+ext.runtime.onStartup.addListener(() => { void monitor(); });
+ext.runtime.onInstalled.addListener(() => { void monitor(); });

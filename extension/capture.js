@@ -2,6 +2,7 @@
 // reads already-loaded page state. Neither clicks, scrolls, navigates, or sends
 // network requests to Kindroid.
 (() => {
+  const ext = globalThis.browser ?? globalThis.chrome;
   const SCAN_DELAY_MS = 15_000;
   const MAX_BATCH = 100;
   const MAX_JOURNAL_BATCH = 10;
@@ -11,14 +12,15 @@
   const plaintext = KinexportPlaintext.createTracker();
   let lastSnapshot = '';
   let lastMediaSnapshot = '';
+  let imageCaptureUnavailable = false;
   let lastState = '';
   async function report(state) {
     if (state === lastState) return;
     lastState = state;
-    try { await chrome.runtime.sendMessage({ type: 'captureStatus', state }); } catch { /* Extension may have reloaded. */ }
+    try { await ext.runtime.sendMessage({ type: 'captureStatus', state }); } catch { /* Extension may have reloaded. */ }
   }
   async function activeFor(uid, expectedPath = null) {
-    const settings = (await chrome.storage.local.get('settings')).settings;
+    const settings = (await ext.storage.local.get('settings')).settings;
     const current = KinexportCache.firebaseUid(localStorage);
     return settings?.enabled === true && current.state === 'ready' && current.uid === uid && (expectedPath === null || location.pathname === expectedPath);
   }
@@ -62,7 +64,7 @@
     if (scanning) { deferred = true; return; }
     scanning = true;
     try {
-      const settings = (await chrome.storage.local.get('settings')).settings;
+      const settings = (await ext.storage.local.get('settings')).settings;
       if (!settings?.enabled) { lastSnapshot = ''; lastMediaSnapshot = ''; plaintext.reset(); clearTimeout(plaintextTimer); plaintextTimer = undefined; await report('paused'); return; }
       const identity = KinexportCache.firebaseUid(localStorage);
       if (identity.state !== 'ready') { lastSnapshot = ''; await report(identity.state); return; }
@@ -102,7 +104,7 @@
         if (observation.pending) schedulePlaintext();
       } else plaintext.reset();
       const journals = snapshot.journals ?? [];
-      const mediaCandidates = globalThis.KinexportMediaCandidates?.read(identity.uid, caches, pathname, document) ?? [];
+      const mediaCandidates = imageCaptureUnavailable ? [] : (globalThis.KinexportMediaCandidates?.read(identity.uid, caches, pathname, document) ?? []);
       const expectedPath = visible.length || plaintextView || historyView || journals.length || mediaCandidates.length ? pathname : null;
       const profileFingerprint = await KinexportExtract.fingerprint(snapshot.profiles);
       const journalFingerprint = await KinexportExtract.fingerprint(journals);
@@ -110,12 +112,12 @@
       const signature = JSON.stringify({ account: snapshot.account, kins: snapshot.kins, profileFingerprint, journalFingerprint, groups: [...snapshot.groups, ...history].map(group => ({ kinId: group.kinId, messages: group.messages.map(({ messageId, fingerprint }) => ({ messageId, fingerprint })) })) });
       if (signature === lastSnapshot && (!mediaCandidates.length || mediaFingerprint === lastMediaSnapshot) && !Object.keys(stablePlaintext).length) { await report(snapshot.conflicts || snapshot.incompleteFields ? 'ambiguous-messages' : 'ready'); return; }
       if (!(await activeFor(identity.uid, expectedPath))) { lastSnapshot = ''; await report('identity-uncertain'); return; }
-      const inventory = await chrome.runtime.sendMessage({ type: 'inventory', account: snapshot.account, kins: snapshot.kins });
+      const inventory = await ext.runtime.sendMessage({ type: 'inventory', account: snapshot.account, kins: snapshot.kins });
       if (!inventory?.ok) return;
       for (const group of snapshot.groups) {
         for (let offset = 0; offset < group.messages.length; offset += MAX_BATCH) {
           if (!(await activeFor(identity.uid, expectedPath))) { lastSnapshot = ''; await report('identity-uncertain'); return; }
-          const result = await chrome.runtime.sendMessage({ type: 'captureBatch', accountId: identity.uid, kinId: group.kinId, messages: group.messages.slice(offset, offset + MAX_BATCH) });
+          const result = await ext.runtime.sendMessage({ type: 'captureBatch', accountId: identity.uid, kinId: group.kinId, messages: group.messages.slice(offset, offset + MAX_BATCH) });
           if (!result?.ok) return;
         }
       }
@@ -133,7 +135,7 @@
           const fresh = new Map((current[0]?.messages ?? []).map(message => [message.messageId, message.fingerprint]));
           const batch = pending.filter(message => fresh.get(message.messageId) === message.fingerprint && current[0]?.rendered?.[message.messageId] === group.rendered[message.messageId]);
           if (batch.length) {
-            const result = await chrome.runtime.sendMessage({ type: 'captureBatch', accountId: identity.uid, kinId: group.kinId, messages: batch });
+            const result = await ext.runtime.sendMessage({ type: 'captureBatch', accountId: identity.uid, kinId: group.kinId, messages: batch });
             if (!result?.ok) return;
           }
           if (batch.length !== pending.length) { lastSnapshot = ''; return; }
@@ -143,12 +145,13 @@
         for (let offset = 0; offset < group.entries.length; offset += MAX_JOURNAL_BATCH) {
           // Ownership and the known-Kin list may change while requests run.
           if (!(await stillBound(identity.uid, group.kinId, pathname))) { lastSnapshot = ''; await report('identity-uncertain'); return; }
-          const result = await chrome.runtime.sendMessage({ type: 'journal', accountId: identity.uid, kinId: group.kinId, entries: group.entries.slice(offset, offset + MAX_JOURNAL_BATCH) });
+          const result = await ext.runtime.sendMessage({ type: 'journal', accountId: identity.uid, kinId: group.kinId, entries: group.entries.slice(offset, offset + MAX_JOURNAL_BATCH) });
           if (!result?.ok) return;
         }
       }
       if (mediaCandidates.length && mediaFingerprint !== lastMediaSnapshot) {
-        const captured = await chrome.runtime.sendMessage({ type: 'mediaSnapshot', urls: mediaCandidates.map(item => item.url) });
+        const captured = await ext.runtime.sendMessage({ type: 'mediaSnapshot', urls: mediaCandidates.map(item => item.url) });
+        if (captured?.reason === 'unsupported') imageCaptureUnavailable = true;
         if (captured?.ok && Array.isArray(captured.images)) {
           const kinId = mediaCandidates[0].kinId;
           if (!(await stillBound(identity.uid, kinId, pathname))) { lastSnapshot = ''; await report('identity-uncertain'); return; }
@@ -165,7 +168,7 @@
             if (!current.has(JSON.stringify(candidate)) || !body) { complete = false; continue; }
             if (!(await stillBound(identity.uid, kinId, pathname))) { lastSnapshot = ''; await report('identity-uncertain'); return; }
             const { url, kinId: ignored, ...item } = candidate;
-            const result = await chrome.runtime.sendMessage({ type: 'mediaSave', accountId: identity.uid, kinId, items: [{ ...item, mime: body.mime, data: body.data }] });
+            const result = await ext.runtime.sendMessage({ type: 'mediaSave', accountId: identity.uid, kinId, items: [{ ...item, mime: body.mime, data: body.data }] });
             if (!result?.ok) return;
           }
           if (complete) lastMediaSnapshot = mediaFingerprint;
@@ -173,7 +176,7 @@
       }
       for (const profile of snapshot.profiles) {
         if (!(await activeFor(identity.uid, expectedPath))) { lastSnapshot = ''; await report('identity-uncertain'); return; }
-        const result = await chrome.runtime.sendMessage({ type: 'profile', profile });
+        const result = await ext.runtime.sendMessage({ type: 'profile', profile });
         if (!result?.ok) return;
       }
       if (plaintextView && Object.keys(stablePlaintext).length) {
@@ -190,7 +193,7 @@
         if (Object.keys(accepted).length) {
           const observedAt = new Date().toISOString();
           const fields = Object.fromEntries(Object.entries(accepted).map(([field, value]) => [field, { value, observedAt }]));
-          const result = await chrome.runtime.sendMessage({ type: 'profile', profile: { accountId: identity.uid, kinId: plaintextView.kinId, fields } });
+          const result = await ext.runtime.sendMessage({ type: 'profile', profile: { accountId: identity.uid, kinId: plaintextView.kinId, fields } });
           if (!result?.ok) return;
           if (!(await stillBound(identity.uid, plaintextView.kinId, pathname))) { plaintext.reset(); lastSnapshot = ''; await report('identity-uncertain'); return; }
           plaintext.commit(accepted);
@@ -230,7 +233,7 @@
     });
     observer.observe(document.documentElement, { childList: true, characterData: true, attributes: true, attributeFilter: ['aria-label', 'role', 'hidden', 'aria-hidden'], subtree: true });
   }
-  chrome.storage.onChanged.addListener((changes, area) => {
+  ext.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.settings) { lastSnapshot = ''; lastMediaSnapshot = ''; void scan(); }
   });
 })();

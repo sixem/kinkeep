@@ -1,14 +1,14 @@
 # KinExport
 
-KinExport is a local-first archive for Kindroid. A Chromium extension observes data already available in your browser and sends it to a local server. The server stores the archive in SQLite and provides a dashboard, search, a digest, portable ZIP exports and SQLite backups.
+KinExport is a local-first archive for Kindroid. A browser extension observes data already available in your browser and sends it to a local server. The server stores the archive in SQLite and provides a dashboard, search, a digest, portable ZIP exports and SQLite backups.
 
 **Status: early development.** Capture is best effort and depends on Kindroid's internal browser data and page layout, which can change without notice. An archive is not a complete or verified copy of a Kindroid account. Keep independent backups and check them before relying on them.
 
-The extension does not click, scroll, navigate or make requests to Kindroid. It can observe account and Kin records, messages, journal entries, selected profile and settings fields, and some already-loaded portraits and selfie previews. Opening and browsing a page may expose more data to the observer. Favorites, original selfies that have not been loaded, and audio capture are not currently implemented.
+The extension does not click, scroll, navigate or make requests to Kindroid. It can observe account and Kin records, messages, journal entries, and selected profile and settings fields. Chrome and Brave can also capture some already-loaded portraits and selfie previews; image capture is not yet available in Firefox. Opening and browsing a page may expose more data to the observer. Favorites, original selfies that have not been loaded, and audio capture are not currently implemented.
 
 ## Get started
 
-Requirements: Docker with Compose v2, OpenSSL for first-time token generation, and Chrome or Brave. On Windows with WSL, enable Docker Desktop's integration for your WSL distribution.
+Requirements: Docker with Compose v2, OpenSSL for first-time token generation, and Chrome, Brave, or Firefox 140 or newer. Building the Firefox add-on also requires Node.js 24 or newer. On Windows with WSL, enable Docker Desktop's integration for your WSL distribution.
 
 1. In this directory, start the server:
 
@@ -18,7 +18,7 @@ Requirements: Docker with Compose v2, OpenSSL for first-time token generation, a
 
    The script creates `.env` with a random access token if it does not exist, builds the image and starts the archive at <http://127.0.0.1:8765>. Running `./setup.sh` without arguments opens an interactive menu. Use `./setup.sh help` for all commands.
 
-2. Open `chrome://extensions` or `brave://extensions`, enable developer mode and select **Load unpacked**. Choose this project's `extension` directory, then pin KinExport from the extensions menu.
+2. In Chrome or Brave, open `chrome://extensions` or `brave://extensions`, enable developer mode and select **Load unpacked**. Choose this project's `extension` directory. For Firefox, run `npm run build:firefox`, open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on**, and choose `dist/firefox/manifest.json`. A temporary Firefox installation must be loaded again after restarting Firefox.
 3. Open the extension popup. Enter `http://127.0.0.1:8765` and the `KINEXPORT_TOKEN` value from `.env`, select **Save settings**, and allow access to the server when prompted. Select **Test connection**, then enable **Archiving**.
 4. Open the archive from the popup and enter the same token. Browse Kindroid normally to let the extension observe available information. Reopen or refresh an already-open Kindroid tab after installing or reloading the extension.
 

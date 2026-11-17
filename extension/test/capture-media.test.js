@@ -7,7 +7,7 @@ import '../extract.js';
 const source = await readFile(new URL('../capture.js', import.meta.url), 'utf8');
 const wait = () => new Promise(resolve => setTimeout(resolve, 40));
 
-function harness({ changeOwner = false, firstSnapshotMissing = false } = {}) {
+function harness({ changeOwner = false, firstSnapshotMissing = false, unsupported = false } = {}) {
   const sent = [];
   let reads = 0, snapshots = 0, rescan;
   const uid = 'u', kinId = 'k';
@@ -22,6 +22,7 @@ function harness({ changeOwner = false, firstSnapshotMissing = false } = {}) {
         sent.push(message);
         if (message.type === 'mediaSnapshot') {
           snapshots++;
+          if (unsupported) return { ok: false, reason: 'unsupported' };
           return { ok: true, images: firstSnapshotMissing && snapshots === 1 ? [] : [{ url: media.url, mime: 'image/webp', data: 'QUJD' }] };
         }
         return { ok: true };
@@ -46,6 +47,14 @@ test('scanner saves only matched image data without persisting its source URL', 
   assert.equal(payload?.items[0].sourceId, 's');
   assert.equal(payload.items[0].data, 'QUJD');
   assert.equal(Object.hasOwn(payload.items[0], 'url'), false);
+});
+
+test('scanner does not retry unsupported image capture or mark images as saved', async () => {
+  const { sent, rescan } = harness({ unsupported: true }); await wait();
+  assert.equal(sent.filter(message => message.type === 'mediaSnapshot').length, 1);
+  assert.equal(sent.some(message => message.type === 'mediaSave'), false);
+  rescan(); await wait();
+  assert.equal(sent.filter(message => message.type === 'mediaSnapshot').length, 1);
 });
 
 test('scanner refuses media when account binding changes', async () => {

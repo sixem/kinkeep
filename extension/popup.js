@@ -1,5 +1,7 @@
 import { DEFAULT_SETTINGS, normalizeEndpoint, permissionFor } from './common.js';
 
+const ext = globalThis.browser ?? globalThis.chrome;
+
 const form = document.querySelector('#settings-form');
 const enabled = document.querySelector('#enabled');
 const endpoint = document.querySelector('#endpoint');
@@ -10,7 +12,8 @@ const feedback = document.querySelector('#feedback');
 const statusText = document.querySelector('#status');
 const indicator = document.querySelector('#indicator');
 const captureStatus = document.querySelector('#capture-status');
-let settings = { ...DEFAULT_SETTINGS, ...(await chrome.storage.local.get('settings')).settings };
+const mediaStatus = document.querySelector('#media-status');
+let settings = { ...DEFAULT_SETTINGS, ...(await ext.storage.local.get('settings')).settings };
 let lastCaptureStatus = {};
 enabled.checked = settings.enabled;
 endpoint.value = settings.endpoint;
@@ -35,14 +38,16 @@ function renderCapture(status = {}) {
   captureStatus.textContent = enabled.checked ? ({ waiting: 'Waiting for Kindroid.', 'identity-uncertain': 'Account not verified; capture paused.', 'ambiguous-messages': 'Some data could not be captured.' })[lastCaptureStatus.state] ?? '' : '';
 }
 setLink();
-render((await chrome.storage.local.get('status')).status);
-renderCapture((await chrome.storage.local.get('captureStatus')).captureStatus);
-chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.status) render(changes.status.newValue); if (area === 'local' && changes.captureStatus) renderCapture(changes.captureStatus.newValue); });
+render((await ext.storage.local.get('status')).status);
+renderCapture((await ext.storage.local.get('captureStatus')).captureStatus);
+ext.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.status) render(changes.status.newValue); if (area === 'local' && changes.captureStatus) renderCapture(changes.captureStatus.newValue); });
 async function send(type) {
-  try { return await chrome.runtime.sendMessage({ type }); }
+  try { return await ext.runtime.sendMessage({ type }); }
   catch (error) { return { ok: false, reason: error instanceof Error ? error.message : 'Extension unavailable.' }; }
 }
-async function persist() { await chrome.storage.local.set({ settings }); await send('settingsChanged'); }
+const capabilities = await send('capabilities');
+if (capabilities?.imageCapture === false) mediaStatus.textContent = 'Image archiving is unavailable in this browser.';
+async function persist() { await ext.storage.local.set({ settings }); await send('settingsChanged'); }
 enabled.addEventListener('change', async () => {
   settings.enabled = enabled.checked;
   renderCapture(lastCaptureStatus);
@@ -54,7 +59,7 @@ form.addEventListener('submit', async event => {
   try {
     const normalized = normalizeEndpoint(endpoint.value);
     // Permission must be requested directly from this user gesture.
-    if (!(await chrome.permissions.request({ origins: [permissionFor(normalized)] }))) throw new Error('Permission was not granted.');
+    if (!(await ext.permissions.request({ origins: [permissionFor(normalized)] }))) throw new Error('Permission was not granted.');
     settings = { ...settings, endpoint: normalized, token: token.value.trim() };
     await persist();
     endpoint.value = normalized;

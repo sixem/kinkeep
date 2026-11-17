@@ -95,3 +95,32 @@ test('background validates token, probes batches, and warns once per outage', as
   assert.ok(requests.every(request => request.url.startsWith('http://127.0.0.1:8765/')));
   delete globalThis.chrome;
 });
+
+test('Firefox promise APIs accept verified content senders and report unsupported media', async () => {
+  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:8765', token: 'secret' } };
+  const requests = [];
+  let listener;
+  globalThis.chrome = {};
+  globalThis.browser = {
+    storage: { local: { get: async key => ({ [key]: structuredClone(store[key]) }), set: async values => Object.assign(store, structuredClone(values)) } },
+    action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
+    alarms: { create: async () => {}, clear: async () => {}, onAlarm: { addListener() {} } },
+    notifications: { create: async () => {} }, permissions: { contains: async () => true },
+    runtime: { id: 'extension-id', getURL: path => `moz-extension://extension-id/${path}`,
+      onMessage: { addListener(fn) { listener = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} } },
+  };
+  globalThis.fetch = async url => { requests.push(url); return { ok: true, json: async () => ({ ok: true }) }; };
+  try {
+    await import('../background.js?firefox');
+    const send = (message, sender) => new Promise(resolve => { assert.equal(listener(message, sender, resolve), true); });
+    const popup = { id: 'extension-id', url: 'moz-extension://extension-id/popup.html' };
+    const tab = { id: 'extension-id', url: 'https://kindroid.ai/v2/chat/kin', frameId: 0, tab: { id: 12 } };
+    assert.deepEqual(await send({ type: 'capabilities' }, popup), { imageCapture: false });
+    assert.deepEqual(await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.webp'] }, tab), { ok: false, reason: 'unsupported' });
+    assert.equal((await send({ type: 'inventory', account: { accountId: 'acct' }, kins: [{ accountId: 'acct', kinId: 'kin' }] }, tab)).ok, true);
+    assert.deepEqual(requests.map(url => new URL(url).pathname), ['/api/accounts', '/api/kins']);
+    assert.equal(listener({ type: 'inventory' }, { ...tab, url: 'https://other.example/' }, () => {}), false);
+    assert.equal(listener({ type: 'inventory' }, { ...tab, frameId: 2 }, () => {}), false);
+    assert.equal(listener({ type: 'inventory' }, { ...tab, tab: { ...tab.tab, url: 'https://other.example/' } }, () => {}), false);
+  } finally { delete globalThis.browser; delete globalThis.chrome; }
+});

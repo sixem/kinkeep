@@ -1,0 +1,31 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildFirefox } from '../build-firefox.mjs';
+
+test('Firefox package contains its runtime files and browser-compatible permissions', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kinexport-firefox-test-'));
+  try {
+    const output = join(dir, 'extension');
+    const chromiumPath = new URL('../../extension/manifest.json', import.meta.url);
+    const chromium = await readFile(chromiumPath, 'utf8');
+    await buildFirefox(output);
+    assert.equal(await readFile(chromiumPath, 'utf8'), chromium);
+    const manifest = JSON.parse(await readFile(join(output, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.version, JSON.parse(chromium).version);
+    assert.equal(manifest.manifest_version, 3);
+    assert.equal(manifest.permissions.includes('pageCapture'), false);
+    assert.ok(manifest.host_permissions.includes('https://kindroid.ai/*'));
+    assert.deepEqual(manifest.background, { scripts: ['background.js'], type: 'module' });
+    assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '140.0');
+    const data = manifest.browser_specific_settings.gecko.data_collection_permissions.required;
+    for (const category of ['authenticationInfo', 'personallyIdentifyingInfo', 'personalCommunications', 'websiteContent']) assert.ok(data.includes(category));
+    for (const file of [manifest.background.scripts[0], manifest.action.default_popup,
+      ...Object.values(manifest.icons), ...manifest.content_scripts.flatMap(script => script.js)]) {
+      assert.ok((await stat(join(output, file))).isFile(), `${file} must be present`);
+    }
+    await assert.rejects(stat(join(output, 'test')));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

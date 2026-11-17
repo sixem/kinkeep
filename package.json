@@ -8,7 +8,8 @@
     "node": ">=24"
   },
   "scripts": {
+    "build:firefox": "node scripts/build-firefox.mjs",
     "check": "node scripts/check-project.mjs && node --check server/server.js && node --check server/media-store.js && node --check server/portable.js && node --check server/thumbnail.js && node --check server/public/app.js && npm test",
-    "test": "npm --prefix server test && npm --prefix extension run check"
+    "test": "node --test scripts/test/*.test.mjs && npm --prefix server test && npm --prefix extension run check"
   }
 }
