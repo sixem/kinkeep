@@ -44,6 +44,27 @@ class Element {
   click() { return this.listeners.click?.({ target: this }); }
 }
 
+test('dashboard uses the same local timestamp for the download ticket and filename', async () => {
+  const elements = new Map(), anchors = [], tickets = [];
+  const document = {
+    addEventListener() {},
+    querySelector(selector) { if (!elements.has(selector)) { const node = new Element(); node.ownerDocument = this; elements.set(selector, node); } return elements.get(selector); },
+    createElement(tag) { const node = new Element(tag); node.ownerDocument = this; if (tag === 'a') anchors.push(node); return node; },
+    createElementNS(_namespace, tag) { return this.createElement(tag); },
+    createTextNode(value) { const node = this.createElement('#text'); node.textContent = value; return node; },
+  };
+  const fetch = async (url, options) => { assert.equal(url, '/api/download-ticket'); tickets.push(JSON.parse(options.body)); return { ok: true }; };
+  const context = { document, fetch, sessionStorage: { getItem: () => '', setItem() {}, removeItem() {} }, URLSearchParams, URL, Date, setTimeout: () => 0, clearTimeout() {}, console };
+  runInNewContext(readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), context);
+  await context.startDownload('portable');
+  await context.startDownload('sqlite');
+  assert.equal(tickets[0].format, 'portable');
+  assert.equal(tickets[1].format, 'sqlite');
+  assert.match(tickets[0].timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:Z|[+-]\d{2}-\d{2})$/);
+  assert.equal(anchors[0].download, `kinexport-${tickets[0].timestamp}.zip`);
+  assert.equal(anchors[1].download, `kinexport-backup-${tickets[1].timestamp}.sqlite3`);
+});
+
 test('single account and conversation open automatically, and refresh keeps the selected Kin', async () => {
   const elements = new Map();
   const document = { activeElement: null, listeners: {}, addEventListener(name, callback) { this.listeners[name] = callback; }, querySelector(selector) { if (!elements.has(selector)) { const node = new Element(); node.ownerDocument = this; elements.set(selector, node); } return elements.get(selector); }, createElement(tag) { const node = new Element(tag); node.ownerDocument = this; return node; }, createElementNS(_namespace, tag) { return this.createElement(tag); }, createTextNode(value) { const node = new Element('#text'); node.ownerDocument = this; node.textContent = value; return node; } };
@@ -105,7 +126,12 @@ test('single account and conversation open automatically, and refresh keeps the 
     return { ok: true, json: async () => routes[url] };
   };
   const sessionStorage = { getItem: () => 'test-token', setItem() {}, removeItem() {} };
-  runInNewContext(readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), { document, fetch, sessionStorage, URLSearchParams, URL, Date, setTimeout: () => 0, clearTimeout() {}, console });
+  const context = { document, fetch, sessionStorage, URLSearchParams, URL, Date, setTimeout: () => 0, clearTimeout() {}, console };
+  runInNewContext(readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), context);
+  const localDate = { getFullYear: () => 2026, getMonth: () => 0, getDate: () => 2, getHours: () => 3, getMinutes: () => 4, getSeconds: () => 5 };
+  assert.equal(context.downloadTimestamp({ ...localDate, getTimezoneOffset: () => -330 }), '2026-01-02T03-04-05+05-30');
+  assert.equal(context.downloadTimestamp({ ...localDate, getTimezoneOffset: () => 210 }), '2026-01-02T03-04-05-03-30');
+  assert.equal(context.downloadTimestamp({ ...localDate, getTimezoneOffset: () => 0 }), '2026-01-02T03-04-05Z');
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   await flush(); await flush();
   assert.equal(elements.get('#welcome-panel').hidden, false);
@@ -165,7 +191,7 @@ test('single account and conversation open automatically, and refresh keeps the 
   assert.equal(elements.get('#image-viewer-title').textContent, 'Selfie preview');
   assert.equal(elements.get('#image-viewer-prompt').value, 'Sample prompt');
   assert.equal(elements.get('#image-viewer-download').href, elements.get('#image-viewer-image').src);
-  assert.match(elements.get('#image-viewer-download').download, /^kinexport-selfie-preview-[a-f0-9]{12}\.webp$/);
+  assert.match(elements.get('#image-viewer-download').download, /^kinexport-selfie-preview-[a-f0-9]{12}-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:Z|[+-]\d{2}-\d{2})\.webp$/);
   const tab = shiftKey => elements.get('#image-viewer').listeners.keydown({ key:'Tab', shiftKey, preventDefault() {} });
   tab(false); assert.equal(document.activeElement, elements.get('#image-viewer-content'));
   tab(false); assert.equal(document.activeElement, elements.get('#image-viewer-prompt'));

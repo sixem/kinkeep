@@ -104,7 +104,7 @@ async function materializePortable(archive, dir) {
   const manifest = { format:FORMAT, version:VERSION, createdAt:new Date().toISOString(), database:'archive.sqlite3', databaseSha256:await sha256(databasePath), mediaDirectory:'media/', mediaCount:media.length };
   return { databasePath, mediaDir, media, manifest };
 }
-export async function streamPortable(archive, response) {
+export async function streamPortable(archive, response, timestamp) {
   const dir = await workspace(archive);
   try {
     const data = await materializePortable(archive, dir);
@@ -114,17 +114,17 @@ export async function streamPortable(archive, response) {
     zip.addBuffer(Buffer.from('KinExport portable archive\n\narchive.sqlite3 contains archive metadata. Images are in media/ and named by their SHA-256 digest. The database references those files by digest; KinExport restores them during import. This archive is not encrypted.\n'), 'README.txt', { mode:0o100600 });
     zip.addFile(data.databasePath, 'archive.sqlite3', { mode:0o100600 });
     for (const name of data.media) zip.addFile(join(data.mediaDir,name), `media/${name}`, { compress:false, mode:0o100600 });
-    response.writeHead(200, { 'Content-Type':'application/zip', 'Content-Disposition':'attachment; filename="kinexport.zip"', 'Cache-Control':'no-store' });
+    response.writeHead(200, { 'Content-Type':'application/zip', 'Content-Disposition':`attachment; filename="kinexport${timestamp ? `-${timestamp}` : ''}.zip"`, 'Cache-Control':'no-store' });
     zip.end();
     await pipeline(zip.outputStream, response);
   } finally { await rm(dir, {recursive:true,force:true}); }
 }
-export async function streamBackup(archive, response) {
+export async function streamBackup(archive, response, timestamp) {
   const dir = await workspace(archive);
   try {
     const path = join(dir,'kinexport.sqlite3'); await backup(archive.db,path);
     if ((await stat(path)).size > MAX_UPLOAD) throw Object.assign(new Error('Archive exceeds the SQLite backup restore limit.'),{status:413});
-    response.writeHead(200, { 'Content-Type':'application/vnd.sqlite3', 'Content-Disposition':'attachment; filename="kinexport-backup.sqlite3"', 'Cache-Control':'no-store' });
+    response.writeHead(200, { 'Content-Type':'application/vnd.sqlite3', 'Content-Disposition':`attachment; filename="kinexport-backup${timestamp ? `-${timestamp}` : ''}.sqlite3"`, 'Cache-Control':'no-store' });
     await pipeline(createReadStream(path),response);
   } finally { await rm(dir,{recursive:true,force:true}); }
 }

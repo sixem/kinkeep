@@ -4,6 +4,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
+import { setTimeout as delay } from 'node:timers/promises';
 import { DatabaseSync } from 'node:sqlite';
 import yazl from 'yazl';
 import yauzl from 'yauzl';
@@ -90,15 +91,49 @@ test('HTTP downloads require authentication or a one-use format-specific cookie'
   }
   try {
     populate(src);const request=client(src),target=client(dst);
+    async function whenReady(method,path,options) {
+      for (let attempt=0;attempt<50;attempt++) {
+        const response=await request(method,path,options);
+        if (response.status!==409) return response;
+        await delay(10);
+      }
+      throw new Error('Archive transfer did not finish cleanup');
+    }
     assert.equal((await request('GET','/api/download/portable')).status,401);
     assert.equal((await request('POST','/api/download-ticket',{type:'application/json',body:'{"format":"portable"}'})).status,401);
     const ticket=await request('POST','/api/download-ticket',{token:'secret',type:'application/json',body:'{"format":"portable"}'});assert.equal(ticket.status,200);
     assert.match(ticket.headers['Set-Cookie'],/HttpOnly; SameSite=Strict/);const cookie=ticket.headers['Set-Cookie'].split(';')[0];
     const zipped=await request('GET','/api/download/portable',{cookie});assert.equal(zipped.status,200);assert.equal(zipped.headers['Content-Type'],'application/zip');
+    assert.equal(zipped.headers['Content-Disposition'],'attachment; filename="kinexport.zip"');
     assert.equal((await request('GET','/api/download/portable',{cookie})).status,401);
     assert.equal((await target('POST','/api/import/portable',{type:'application/zip',body:zipped.body})).status,401);
     assert.equal((await target('POST','/api/import/portable',{token:'secret',type:'application/zip',body:zipped.body})).status,200);
     assert.deepEqual(snapshot(dst),snapshot(src));
     const raw=await request('GET','/api/download/sqlite',{token:'secret'});assert.equal(raw.status,200);assert.equal(raw.body.subarray(0,16).toString('binary'),'SQLite format 3\u0000');
+    assert.equal(raw.headers['Content-Disposition'],'attachment; filename="kinexport-backup.sqlite3"');
+    for (const [format, date, expected] of [
+      ['sqlite','2026-11-17T02-45-31+01-00','kinexport-backup-2026-11-17T02-45-31+01-00.sqlite3'],
+      ['portable','2026-11-16T17-15-31-08-00','kinexport-2026-11-16T17-15-31-08-00.zip'],
+      ['sqlite','2026-11-17T01-45-31Z','kinexport-backup-2026-11-17T01-45-31Z.sqlite3'],
+    ]) {
+      const issued=await whenReady('POST','/api/download-ticket',{token:'secret',type:'application/json',body:JSON.stringify({format,timestamp:date})});
+      assert.equal(issued.status,200);
+      const oneUse=issued.headers['Set-Cookie'].split(';')[0];
+      const downloaded=await request('GET',`/api/download/${format}`,{cookie:oneUse});
+      assert.equal(downloaded.status,200);
+      assert.equal(downloaded.headers['Content-Disposition'],`attachment; filename="${expected}"`);
+      assert.equal((await request('GET',`/api/download/${format}`,{cookie:oneUse})).status,401);
+    }
+    for (const date of [null, 123, '', '2026-11-17T02:45:31Z', '2026-11-17T02-45-31Z\r\nInjected: yes',
+      '2026-02-30T02-45-31Z', '2026-11-17T24-45-31Z', '2026-11-17T02-45-31+15-00', '2026-11-17T02-45-31+14-30']) {
+      const rejected=await request('POST','/api/download-ticket',{token:'secret',type:'application/json',body:JSON.stringify({format:'sqlite',timestamp:date})});
+      assert.equal(rejected.status,400,`reject invalid timestamp ${JSON.stringify(date)}`);
+      assert.equal(rejected.headers['Set-Cookie'],undefined);
+    }
+    const wrong=await whenReady('POST','/api/download-ticket',{token:'secret',type:'application/json',body:JSON.stringify({format:'portable',timestamp:'2026-11-17T01-45-31Z'})});
+    const wrongCookie=wrong.headers['Set-Cookie'].split(';')[0];
+    const bearer=await request('GET','/api/download/sqlite',{token:'secret',cookie:wrongCookie});
+    assert.equal(bearer.status,200);
+    assert.equal(bearer.headers['Content-Disposition'],'attachment; filename="kinexport-backup.sqlite3"');
   } finally {src.db.close();dst.db.close();await rm(dir,{recursive:true,force:true})}
 });

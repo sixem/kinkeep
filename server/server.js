@@ -47,6 +47,21 @@ function object(value, name) {
 function onlyKeys(value, allowed, name) {
   for (const key of Object.keys(value)) if (!allowed.includes(key)) throw error(400, `Unexpected ${name} field: ${key}`);
 }
+function downloadTimestamp(value) {
+  const match = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})(?:Z|([+-])(\d{2})-(\d{2}))$/.exec(value);
+  if (!match) throw error(400, 'Invalid download timestamp');
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, sign, offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText), month = Number(monthText), day = Number(dayText);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const offsetHour = Number(offsetHourText), offsetMinute = Number(offsetMinuteText);
+  if (month < 1 || month > 12 || day < 1 || day > days[month - 1] ||
+      Number(hourText) > 23 || Number(minuteText) > 59 || Number(secondText) > 59 ||
+      (sign && (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0)))) {
+    throw error(400, 'Invalid download timestamp');
+  }
+  return value;
+}
 function accountInput(raw) {
   object(raw, 'account');
   onlyKeys(raw, ['accountId', 'displayName', 'sourceTimestamp', 'firstSeen', 'lastSeen'], 'account');
@@ -913,9 +928,10 @@ export function createHttpServer({ archive, token, allowedHosts = ['127.0.0.1', 
         const ticket = value ? tickets.get(value) : null;
         if (value) tickets.delete(value);
         const format = url.pathname.endsWith('/portable') ? 'portable' : 'sqlite';
-        if (!validToken(req.headers.authorization, token) && (!ticket || ticket.expires < Date.now() || ticket.format !== format)) return sendJson(res, 401, { error:'Unauthorized' });
+        const validTicket = ticket && ticket.expires >= Date.now() && ticket.format === format ? ticket : null;
+        if (!validToken(req.headers.authorization, token) && !validTicket) return sendJson(res, 401, { error:'Unauthorized' });
         res.setHeader('Set-Cookie','kinexport_download=; Path=/api/download; Max-Age=0; HttpOnly; SameSite=Strict');
-        return await transfer(() => format === 'portable' ? streamPortable(archive,res) : streamBackup(archive,res));
+        return await transfer(() => format === 'portable' ? streamPortable(archive,res,validTicket?.timestamp) : streamBackup(archive,res,validTicket?.timestamp));
       }
       if (!validToken(req.headers.authorization, token)) return sendJson(res, 401, { error: 'Unauthorized' });
       const contentType = req.headers['content-type']?.split(';')[0].trim();
@@ -929,12 +945,13 @@ export function createHttpServer({ archive, token, allowedHosts = ['127.0.0.1', 
       }
       if (req.method === 'POST' && contentType !== 'application/json') throw error(415, 'Expected application/json');
       if (req.method === 'POST' && url.pathname === '/api/download-ticket') {
-        const body=await readJson(req); object(body,'download'); onlyKeys(body,['format'],'download');
+        const body=await readJson(req); object(body,'download'); onlyKeys(body,['format','timestamp'],'download');
         if (!['portable','sqlite'].includes(body.format)) throw error(400,'Invalid download format');
+        const timestamp = Object.hasOwn(body,'timestamp') ? downloadTimestamp(body.timestamp) : undefined;
         if (transferBusy) throw error(409,'Another archive transfer is in progress.');
         const now=Date.now(); for (const [key,ticket] of tickets) if (ticket.expires < now) tickets.delete(key);
         if (tickets.size >= 20) throw error(429,'Too many pending downloads.');
-        const value=randomBytes(32).toString('base64url'); tickets.set(value,{format:body.format,expires:now+120_000});
+        const value=randomBytes(32).toString('base64url'); tickets.set(value,{format:body.format,timestamp,expires:now+120_000});
         return sendJson(res,200,{ok:true},{'Set-Cookie':`kinexport_download=${value}; Path=/api/download; Max-Age=120; HttpOnly; SameSite=Strict`});
       }
       if (req.method === 'POST' && url.pathname === '/api/accounts') return sendJson(res, 200, { account: archive.upsertAccount(await readJson(req)) });

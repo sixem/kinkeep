@@ -34,6 +34,8 @@ The dashboard offers two formats:
 
 Save backup files separately from the machine and volume as appropriate, restrict access, and test recovery in an isolated archive. Both export formats are unencrypted. ZIP import accepts the supported KinExport portable format, not JSON or arbitrary ZIPs; SQLite restore accepts the current supported schema.
 
+Dashboard downloads include the browser's local date, 24-hour time and UTC offset in their filenames, for example `kinexport-backup-2026-11-17T09-15-30+01-00.sqlite3`. A `Z` suffix indicates UTC.
+
 For a running Docker setup, copy the server's pre-restore recovery copies out of its volume with:
 
 ```sh

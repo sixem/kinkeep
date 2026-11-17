@@ -35,6 +35,12 @@ function displayDate(value) {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   });
 }
+function downloadTimestamp(date = new Date()) {
+  const pad = value => String(value).padStart(2, '0');
+  const offset = -date.getTimezoneOffset();
+  const zone = offset === 0 ? 'Z' : `${offset < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(offset) / 60))}-${pad(Math.abs(offset) % 60)}`;
+  return `${String(date.getFullYear()).padStart(4, '0')}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}${zone}`;
+}
 function messageTime(message) {
   for (const value of [message.timestamp, message.firstSeen]) {
     if (!value) continue;
@@ -495,6 +501,7 @@ function closeImageViewer(restoreFocus = true) {
   $('#image-viewer').hidden = true;
   $('#image-viewer-image').removeAttribute('src');
   $('#image-viewer-download').removeAttribute('href');
+  $('#image-viewer-download').onclick = null;
   if (imageViewerUrl) URL.revokeObjectURL(imageViewerUrl);
   imageViewerUrl = null;
   if (restoreFocus && imageViewerFocus?.isConnected) imageViewerFocus.focus();
@@ -542,7 +549,9 @@ async function openImageViewer(state, item, source) {
     const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[blob.type] || 'img';
     const download = $('#image-viewer-download');
     download.href = imageViewerUrl;
-    download.download = `kinexport-${imageLabel(item).toLowerCase().replaceAll(' ', '-')}-${item.sha256.slice(0, 12)}.${extension}`;
+    const filename = () => `kinexport-${imageLabel(item).toLowerCase().replaceAll(' ', '-')}-${item.sha256.slice(0, 12)}-${downloadTimestamp()}.${extension}`;
+    download.download = filename();
+    download.onclick = () => { download.download = filename(); };
     $('#image-viewer-content').scrollTop = 0;
     $('#image-viewer').hidden = false; $('#image-viewer-close').focus();
   } catch {
@@ -936,8 +945,9 @@ $('#search').addEventListener('keydown', (event) => {
   if (event.key === 'Escape') $('#search-results').replaceChildren();
 });
 async function startDownload(format) {
-  await api('/api/download-ticket', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({format}) });
-  const link=document.createElement('a'); link.href=`/api/download/${format}`; link.download=format === 'portable' ? 'kinexport.zip' : 'kinexport-backup.sqlite3'; link.click();
+  const timestamp = downloadTimestamp();
+  await api('/api/download-ticket', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({format, timestamp}) });
+  const link=document.createElement('a'); link.href=`/api/download/${format}`; link.download=format === 'portable' ? `kinexport-${timestamp}.zip` : `kinexport-backup-${timestamp}.sqlite3`; link.click();
   showToast('Preparing download.');
 }
 $('#export').addEventListener('click', () => startDownload('portable').catch(showError));
