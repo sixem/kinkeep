@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createArchive } from '../../server/server.js';
 import '../profiles.js';
 import '../extract.js';
+import '../dom-extract.js';
 
 test('extracted message is accepted by the real scoped archive and deduplicated', async () => {
   const uid = 'test-account';
@@ -24,6 +25,34 @@ test('extracted message is accepted by the real scoped archive and deduplicated'
     assert.equal(archive.scopedProbe(scope, probe).results[0].status, 'unchanged');
     assert.equal(archive.scopedArchiveMessages(scope)[0].data.chatHistoryRecordId, 'history-id');
     assert.equal(archive.scopedArchiveMessages(scope)[0].data.reactions['kin:test-kin'], '❤️');
+  } finally { archive.db.close(); }
+});
+
+test('two browsers skip an optimistic message and preserve genuinely repeated sends', async () => {
+  const uid = 'test-account', kinId = 'test-kin';
+  const temporary = 'local-01234567-89ab-cdef-0123-456789abcdef';
+  const article = { parentElement: { id: `v2-msg-${temporary}`, dataset: { chatTimestamp: '1730000000000' } },
+    classList: ['test_align-self'], querySelectorAll: () => [{ nodeType: 3, nodeValue: 'Repeated text' }] };
+  const document = { querySelector: () => ({ querySelectorAll: () => [article] }) };
+  const view = { state: 'ready', kins: [{ kinId }], groups: [] };
+  assert.deepEqual(await globalThis.KinexportDom.extractVisible(document, `/v2/chat/${kinId}`, view), []);
+  const cache = { ownerUid: uid, client: { clientState: { queries: [
+    { queryKey: ['v2', 'user', uid], state: { data: { aiList: [kinId] } } },
+    { queryKey: ['v2', 'chat-messages', uid, kinId], state: { data: [
+      { id: 'stable-one', text: 'Repeated text', isSelf: true, timestamp: 1730000005000 },
+      { id: 'stable-two', text: 'Repeated text', isSelf: true, timestamp: 1730000010000 },
+    ] } },
+  ] } } };
+  const result = await globalThis.KinexportExtract.extract(uid, [cache]);
+  const archive = createArchive({ databasePath: ':memory:', token: 'test-token' });
+  try {
+    archive.upsertAccount(result.account);
+    for (const kin of result.kins) archive.upsertKin(kin);
+    const scope = { accountId: uid, kinId };
+    const messages = result.groups[0].messages;
+    assert.deepEqual(archive.scopedIngest(scope, messages), { inserted: 2, updated: 0, unchanged: 0 });
+    assert.deepEqual(archive.scopedIngest(scope, messages), { inserted: 0, updated: 0, unchanged: 2 });
+    assert.equal(archive.scopedArchiveMessages(scope).length, 2);
   } finally { archive.db.close(); }
 });
 

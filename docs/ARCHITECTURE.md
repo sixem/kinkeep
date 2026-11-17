@@ -8,7 +8,7 @@ The extension does not click, scroll, navigate or directly request Kindroid data
 
 The extension associates records with the logged-in Firebase UID and a Kin verified in that account's cache. A Firebase display name can be saved as a label; the UID remains the account identifier. Capture stops when the account is ambiguous or mismatched.
 
-Messages belong to an account, Kin and conversation. The collector uses `observed-main` because the source does not provide a reliable conversation boundary. It batches fingerprint probes and sends missing or changed messages; conflicting observations are kept as revisions. Cached messages take precedence over rendered observations with the same source ID.
+Messages belong to an account, Kin and conversation. The collector uses `observed-main` because the source does not provide a reliable conversation boundary. It skips temporary message IDs, batches fingerprint probes and sends missing or changed messages; conflicting observations are kept as revisions. Cached messages take precedence over rendered observations with the same source ID.
 
 Chat History entries are matched to already-loaded IDs and timestamps; entries without a reliable timestamp are skipped. Profile fields, settings and journal entries are recorded when seen. Readable personality editor text is stored separately from cached encrypted values and may include unsaved drafts. Missing fields never delete existing values, and differing journal observations are retained without assuming edit order.
 

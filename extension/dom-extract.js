@@ -56,7 +56,7 @@
       const wrapper = article.parentElement;
       if (!wrapper?.id?.startsWith('v2-msg-')) continue;
       const messageId = wrapper.id.slice('v2-msg-'.length);
-      if (!messageId.trim() || messageId.length > 2048 || cached.has(messageId)) continue;
+      if (!messageId.trim() || messageId.length > 2048 || KinexportExtract.isProvisionalMessageId(messageId) || cached.has(messageId)) continue;
       const timestamp = Number(wrapper.dataset?.chatTimestamp);
       if (!Number.isFinite(timestamp) || timestamp < 1_000_000_000_000) continue;
       const date = new Date(timestamp);
@@ -111,7 +111,7 @@
       const id = article.parentElement?.id;
       if (typeof id !== 'string' || !id.startsWith('v2-history-')) continue;
       const value = id.slice('v2-history-'.length);
-      if (value.trim() && value.length <= 2048) ids.add(value);
+      if (value.trim() && value.length <= 2048 && !KinexportExtract.isProvisionalMessageId(value)) ids.add(value);
     }
     return [...ids];
   }
@@ -123,7 +123,7 @@
     const cached = snapshot.cacheIds?.get(view.kinId) ?? new Set(snapshot.groups.find(group => group.kinId === view.kinId)?.messages.map(message => message.messageId) ?? []);
     const metadata = new Map();
     for (const record of records) {
-      if (!record || typeof record.id !== 'string' || !record.id.trim() || record.id.length > 2048 || !Number.isFinite(record.timestamp) || record.timestamp < 1_000_000_000_000 || typeof record.isSelf !== 'boolean') continue;
+      if (!record || typeof record.id !== 'string' || !record.id.trim() || record.id.length > 2048 || KinexportExtract.isProvisionalMessageId(record.id) || !Number.isFinite(record.timestamp) || record.timestamp < 1_000_000_000_000 || typeof record.isSelf !== 'boolean') continue;
       if (!Number.isFinite(new Date(record.timestamp).getTime())) continue;
       const current = { timestamp: record.timestamp, isSelf: record.isSelf, data: { captureSource: 'dom' } };
       if (typeof record.text === 'string' && record.text.trim() && record.text.length <= 1_000_000 && !/(?:^|:)U2FsdGVkX1[A-Za-z0-9+/=]+$/.test(record.text)) {

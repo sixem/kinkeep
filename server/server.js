@@ -10,6 +10,7 @@ import { streamPortable, streamBackup, importPortable, restoreBackup } from './p
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const MAX_BODY = 128 * 1024 * 1024;
 const MAX_BATCH = 500;
+const isProvisionalDomMessage = message => (message.captureSource ?? message.data?.captureSource) === 'dom' && typeof message.messageId === 'string' && /^local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.messageId);
 // Ignore malformed/non-date expressions (notably SQLite's dynamic "now").
 const messageOrderTime = (alias = '') => `COALESCE(CASE WHEN substr(${alias}timestamp,5,1)='-' AND substr(${alias}timestamp,8,1)='-' THEN julianday(${alias}timestamp) END, CASE WHEN substr(${alias}first_seen,5,1)='-' AND substr(${alias}first_seen,8,1)='-' THEN julianday(${alias}first_seen) END, 0)`;
 
@@ -502,6 +503,9 @@ export function createArchive({ databasePath, token }) {
     scope = requireScope(scope);
     messages = messages.map((m) => scopedMessage(m, true));
     return { results: messages.map((m) => {
+      // Older extensions may still report optimistic DOM IDs. Tell them no
+      // upload is needed instead of persisting a temporary duplicate.
+      if (isProvisionalDomMessage(m)) return { status: 'unchanged' };
       const row = findScoped(scope, m);
       if (!row) return { status: 'missing' };
       const source = row.data ? JSON.parse(row.data).captureSource : undefined;
@@ -515,6 +519,8 @@ export function createArchive({ databasePath, token }) {
   function scopedIngestInside(scope, messages, { importing = false } = {}) {
     scope = requireScope(scope); const counts = { inserted: 0, updated: 0, unchanged: 0 }; const now = new Date().toISOString();
     for (const m of messages) {
+      // Keep archived imports intact, including observations from old versions.
+      if (!importing && isProvisionalDomMessage(m)) { counts.unchanged++; continue; }
       if (importing) db.prepare('INSERT OR IGNORE INTO scoped_conversations(account_id,kin_id,id,first_seen,last_seen) VALUES(?,?,?,?,?)').run(scope.accountId,scope.kinId,m.conversationId,m.firstSeen || now,m.lastSeen || now);
       else db.prepare(`INSERT INTO scoped_conversations(account_id,kin_id,id,first_seen,last_seen) VALUES(?,?,?,?,?)
         ON CONFLICT(account_id,kin_id,id) DO UPDATE SET last_seen=excluded.last_seen`).run(scope.accountId, scope.kinId, m.conversationId, m.firstSeen || now, m.lastSeen || now);

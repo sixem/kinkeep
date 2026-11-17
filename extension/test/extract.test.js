@@ -68,6 +68,16 @@ test('revisions change the fingerprint and conflicting duplicates are not guesse
   assert.equal(conflicting.conflicts, 1);
 });
 
+test('optimistic cache IDs are ignored until a stable message ID is available', async () => {
+  const input = cache();
+  const records = input.client.clientState.queries[3].state.data;
+  const temporary = 'local-01234567-89ab-cdef-0123-456789abcdef';
+  records.push({ ...records[0], id: temporary });
+  const result = await extract('account-a', [input]);
+  assert.deepEqual(result.groups[0].messages.map(message => message.messageId), ['message-1']);
+  assert.equal(result.cacheIds.get('kin-a').has(temporary), false);
+});
+
 test('journals require the verified account and Kin, a timestamp, and bounded plaintext', async () => {
   const input = cache();
   const query = (uid, kinId, entries) => ({ queryKey: ['v2', 'journal-entries', 'kin', uid, kinId], state: { data: { pages: [{ entries }] } } });

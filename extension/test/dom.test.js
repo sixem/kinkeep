@@ -29,6 +29,12 @@ test('conflicting visible duplicates are skipped', async () => {
   const page = doc([article('same', 'one'), article('same', 'two')]);
   assert.deepEqual(await globalThis.KinexportDom.extractVisible(page, '/v2/chat/kin-a', snapshot), []);
 });
+test('optimistic local messages are skipped while stable IDs remain distinct', async () => {
+  const temporary = 'local-01234567-89ab-cdef-0123-456789abcdef';
+  const page = doc([article(temporary, 'same text'), article('stable-id', 'same text'), article('local-keep', 'same text')]);
+  const [group] = await globalThis.KinexportDom.extractVisible(page, '/v2/chat/kin-a', snapshot);
+  assert.deepEqual(group.messages.map(message => message.messageId), ['stable-id', 'local-keep']);
+});
 test('narration, emphasis, nested formatting and whitespace are reconstructed from text nodes', async () => {
   const p = el('p', text('Hello '), el('em', text('smiles')), text(' and '), el('strong', text('speaks '), el('i', text('softly'))), text('.'));
   assert.equal(globalThis.KinexportDom.toSourceText(p), 'Hello *smiles* and **speaks *softly***.');
@@ -78,6 +84,17 @@ test('history captures rendered narration only with matching scoped Kin, timesta
   assert.equal(groups.length, 1);
   assert.deepEqual(groups[0].messages.map(m => [m.messageId, m.sender, m.timestamp, m.content]), [['history-id', 'kin', '2024-10-27T03:33:20.123Z', 'Hi *smiles*']]);
   assert.equal(groups[0].messages[0].data.captureSource, 'dom');
+});
+test('history does not request or archive temporary message IDs', async () => {
+  const temporary = 'local-01234567-89ab-cdef-0123-456789abcdef';
+  const page = historyPage([historyArticle(temporary, 'pending'), historyArticle('stable-id', 'saved')]);
+  const view = globalThis.KinexportDom.historyView(page.document, '/v2/kin-settings/kin-a', snapshot);
+  assert.deepEqual(globalThis.KinexportDom.historyIds(view), ['stable-id']);
+  const [group] = await globalThis.KinexportDom.extractHistory(view, [
+    { id: temporary, timestamp: 1730000000000, isSelf: true },
+    { id: 'stable-id', timestamp: 1730000000000, isSelf: true },
+  ], snapshot);
+  assert.deepEqual(group.messages.map(message => message.messageId), ['stable-id']);
 });
 test('history refuses ambiguous metadata, mismatched sender, duplicate conflicting content and hidden dialog', async () => {
   const page = historyPage([historyArticle('conflict', 'one'), historyArticle('conflict', 'two'), historyArticle('sender', 'three'), historyArticle('time', 'four')]);

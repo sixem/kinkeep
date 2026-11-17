@@ -5,6 +5,28 @@ import { createArchive } from '../server.js';
 const create = () => createArchive({ databasePath: ':memory:', token: 'test-token' });
 const sample = { conversationId: 'conversation-1', kinId: 'kin-1', kinName: 'Person1', messageId: 'message-1', fingerprint: 'hash-a', sender: 'Person1', timestamp: '2026-01-01T12:00:00Z', content: 'Hello' };
 
+test('older extensions cannot store optimistic DOM IDs, but archived imports are preserved', () => {
+  const archive = create(), restored = create();
+  const scope = { accountId: 'account', kinId: 'kin' };
+  const temporary = { conversationId: 'observed-main', messageId: 'local-01234567-89ab-cdef-0123-456789abcdef', fingerprint: 'pending', content: 'same text', data: { captureSource: 'dom' } };
+  try {
+    archive.upsertAccount({ accountId: scope.accountId }); archive.upsertKin(scope);
+    const probe = { conversationId: temporary.conversationId, messageId: temporary.messageId, fingerprint: temporary.fingerprint, captureSource: 'dom' };
+    assert.deepEqual(archive.scopedProbe(scope, [probe]), { results: [{ status: 'unchanged' }] });
+    assert.deepEqual(archive.scopedIngest(scope, [temporary]), { inserted: 0, updated: 0, unchanged: 1 });
+    assert.equal(archive.scopedArchiveMessages(scope).length, 0);
+    const stable = { ...temporary, messageId: 'stable-id', fingerprint: 'stable', data: { captureSource: 'cache' } };
+    assert.equal(archive.scopedIngest(scope, [stable]).inserted, 1);
+    assert.equal(archive.scopedIngest(scope, [{ ...stable, messageId: 'another-id', fingerprint: 'another' }]).inserted, 1);
+    // Emulate an older archive that already contains the provisional record.
+    archive.scopedIngest(scope, [{ ...temporary, data: { captureSource: 'cache' } }]);
+    archive.db.prepare('UPDATE scoped_messages SET data=? WHERE source_id=?').run(JSON.stringify(temporary.data), temporary.messageId);
+    restored.importArchive(archive.exportArchive());
+    assert.equal(restored.scopedArchiveMessages(scope).length, 3);
+    assert.ok(restored.scopedArchiveMessages(scope).some(message => message.messageId === temporary.messageId));
+  } finally { archive.db.close(); restored.db.close(); }
+});
+
 test('probe, ingest, deduplicate, and retain earlier versions on update', () => {
   const archive = create();
   try {

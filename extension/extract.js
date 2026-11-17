@@ -1,6 +1,9 @@
 // Extract only fields whose meaning was verified in Kindroid's local cache.
 (() => {
   const isId = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 2048;
+  // Kindroid assigns local UUIDs to optimistic messages before they receive a
+  // persistent source ID. Their timestamps and IDs are not archive identities.
+  const isProvisionalMessageId = value => typeof value === 'string' && /^local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
   const keyIs = (key, ...parts) => Array.isArray(key) && parts.every((part, index) => key[index] === part);
   function stable(value) {
     if (Array.isArray(value)) return value.map(stable);
@@ -51,8 +54,8 @@
       if (!Array.isArray(key) || key.length !== 4 || !keyIs(key, 'v2', 'chat-messages', uid) || !known.has(key[3]) || !Array.isArray(query.state?.data)) continue;
       const byId = recordsByKin.get(key[3]);
       for (const record of query.state.data) {
-        if (isId(record?.id)) cacheIds.get(key[3]).add(record.id);
-        if (!isId(record?.id) || typeof record.text !== 'string' || record.text.length > 1_000_000 || typeof record.isSelf !== 'boolean' || !Number.isFinite(record.timestamp)) continue;
+        if (isId(record?.id) && !isProvisionalMessageId(record.id)) cacheIds.get(key[3]).add(record.id);
+        if (!isId(record?.id) || isProvisionalMessageId(record.id) || typeof record.text !== 'string' || record.text.length > 1_000_000 || typeof record.isSelf !== 'boolean' || !Number.isFinite(record.timestamp)) continue;
         const date = new Date(record.timestamp);
         if (!Number.isFinite(date.getTime()) || record.timestamp < 1_000_000_000_000) continue;
         const data = { captureSource: 'cache' };
@@ -126,5 +129,5 @@
     }
     return { state: 'ready', account: { accountId: uid }, kins, profiles: profileResult.profiles, groups, journals, conflicts: conflicts + profileResult.conflicts, incompleteFields: incompleteFields + profileResult.incompleteFields, cacheIds };
   }
-  globalThis.KinexportExtract = Object.freeze({ extract, fingerprint });
+  globalThis.KinexportExtract = Object.freeze({ extract, fingerprint, isProvisionalMessageId });
 })();
