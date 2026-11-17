@@ -7,9 +7,10 @@ import '../extract.js';
 const source = await readFile(new URL('../capture.js', import.meta.url), 'utf8');
 const wait = () => new Promise(resolve => setTimeout(resolve, 40));
 
-function harness({ changeOwner = false, firstSnapshotMissing = false, unsupported = false } = {}) {
+function harness({ changeOwner = false, firstSnapshotMissing = false, unsupported = false, imageArchiving = true } = {}) {
   const sent = [];
-  let reads = 0, snapshots = 0, rescan;
+  let reads = 0, snapshots = 0, rescan, settingsChanged;
+  const settings = { enabled: true, imageArchiving };
   const uid = 'u', kinId = 'k';
   const cache = { ownerUid: uid, client: { clientState: { queries: [{ queryKey: ['v2', 'user', uid], state: { data: { aiList: [kinId] } } }] } } };
   const media = { kinId, sourceId: 's', kind: 'selfie', variant: 'preview', createdAt: '2026-01-01T00:00:00.000Z', url: 'https://img.kindroid.ai/a.webp' };
@@ -17,7 +18,7 @@ function harness({ changeOwner = false, firstSnapshotMissing = false, unsupporte
     document: { addEventListener() {} }, location: { pathname: '/v2/chat/k' }, localStorage: {}, indexedDB: {},
     setTimeout, clearTimeout, setInterval(fn) { rescan = fn; },
     chrome: {
-      storage: { local: { get: async () => ({ settings: { enabled: true } }) }, onChanged: { addListener() {} } },
+      storage: { local: { get: async () => ({ settings }) }, onChanged: { addListener(fn) { settingsChanged = fn; } } },
       runtime: { sendMessage: async message => {
         sent.push(message);
         if (message.type === 'mediaSnapshot') {
@@ -38,8 +39,17 @@ function harness({ changeOwner = false, firstSnapshotMissing = false, unsupporte
     KinexportPlaintext: { createTracker: () => ({ reset() {} }), read: () => null },
   };
   vm.runInNewContext(source, context);
-  return { sent, rescan: () => rescan() };
+  return { sent, rescan: () => rescan(), setImages: value => { settings.imageArchiving = value; settingsChanged({ settings: {} }, 'local'); } };
 }
+
+test('scanner skips images while disabled and resumes after re-enabling', async () => {
+  const { sent, setImages } = harness({ imageArchiving: false }); await wait();
+  assert.equal(sent.some(message => message.type === 'mediaSnapshot' || message.type === 'mediaSave'), false);
+  assert.equal(sent.some(message => message.type === 'inventory'), true);
+  setImages(true); await wait();
+  assert.equal(sent.filter(message => message.type === 'mediaSnapshot').length, 1);
+  assert.equal(sent.filter(message => message.type === 'mediaSave').length, 1);
+});
 
 test('scanner saves only matched image data without persisting its source URL', async () => {
   const { sent } = harness(); await wait();

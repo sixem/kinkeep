@@ -1,6 +1,6 @@
 # KinExport browser extension
 
-This extension passively reads the current user's existing Kindroid browser cache and visible chat and sends verified account, Kin and chat data to your configured archive server. It does not click, scroll, navigate, or make additional requests to Kindroid. The history reader runs in the page context to inspect already-loaded React Query state.
+This extension reads the current user's existing Kindroid browser cache and visible chat and sends verified account, Kin and chat data to your configured archive server. It does not click, scroll, navigate, or directly request data from Kindroid. The history reader runs in the page context to inspect already-loaded React Query state. The optional image snapshot has a browser-dependent request caveat described below.
 
 ## Install for development
 
@@ -29,7 +29,7 @@ The extension probes the archive and then sends missing or changed records. A sh
 
 ## Other observed data
 
-When you open Chat History and browse it, the extension can match displayed entries to already-loaded history IDs and timestamps. It skips entries without a reliable timestamp. Journal entries are read from available account- and Kin-scoped cache data; opening the journal may make additional entries available. In Chrome and Brave, captured portrait and selfie resources must already be rendered and match verified metadata. The extension uses page capture to extract these resources from a temporary page snapshot; it does not download image URLs itself. Gallery captures are marked as previews. Firefox does not provide this page-capture API, so image archiving is unavailable there; messages, profiles and other supported records continue to be observed.
+When you open Chat History and browse it, the extension can match displayed entries to already-loaded history IDs and timestamps. It skips entries without a reliable timestamp. Journal entries are read from available account- and Kin-scoped cache data; opening the journal may make additional entries available. In Chrome and Brave, captured portrait and selfie resources must already be rendered and match verified metadata. Image archiving defaults to on and can be disabled independently in the popup; previously archived images remain available. The extension uses page capture to extract these resources from a temporary page snapshot; it does not download image URLs itself. In some Chromium configurations, creating a snapshot can cause the browser to request a stylesheet again. Gallery captures are marked as previews. Firefox does not provide this page-capture API, so image archiving is unavailable there; messages, profiles and other supported records continue to be observed.
 
 See the [capture design](../docs/ARCHITECTURE.md) for data flow and the [operations guide](../docs/OPERATIONS.md) for recovery and troubleshooting.
 

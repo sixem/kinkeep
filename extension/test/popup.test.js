@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 test('connection feedback distinguishes actionable failures without exposing secrets', async () => {
   const settings = { enabled: false, endpoint: 'http://127.0.0.1:8765', token: 'private-token' };
-  const elements = Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, {
+  const elements = Object.fromEntries(['settings-form', 'enabled', 'image-archiving', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, {
     value: '', textContent: '', checked: false, handlers: {},
     addEventListener(type, handler) { this.handlers[type] = handler; },
     removeAttribute() {},
@@ -72,7 +72,7 @@ test('permission prompt preserves submitted settings without changing active con
   let finishWrite;
   let granted = false;
   let calls = [];
-  const makeElements = () => Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, {
+  const makeElements = () => Object.fromEntries(['settings-form', 'enabled', 'image-archiving', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, {
     value: '', textContent: '', checked: false, handlers: {},
     addEventListener(type, handler) { this.handlers[type] = handler; },
     removeAttribute() {},
@@ -112,7 +112,7 @@ test('permission prompt preserves submitted settings without changing active con
     granted = true;
     elements = makeElements();
     await import('../popup.js?permission-after');
-    assert.deepEqual(local.settings, { enabled: true, endpoint: 'http://localhost:9999', token: 'new-token' });
+    assert.deepEqual(local.settings, { enabled: true, imageArchiving: true, endpoint: 'http://localhost:9999', token: 'new-token' });
     assert.equal(session.pendingArchiveSettings, undefined);
     assert.equal(elements.token.value, 'new-token');
     assert.equal(elements.feedback.textContent, 'Settings saved.');
@@ -130,7 +130,7 @@ test('denying permission preserves the draft and keeps the active settings', asy
   const session = {};
   let finishPrompt;
   const area = object => ({ get: async key => ({ [key]: object[key] }), set: async values => Object.assign(object, structuredClone(values)), remove: async key => { delete object[key]; } });
-  const makeElements = () => Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
+  const makeElements = () => Object.fromEntries(['settings-form', 'enabled', 'image-archiving', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
   let elements = makeElements();
   globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
   globalThis.browser = {
@@ -160,7 +160,7 @@ test('denying permission preserves the draft and keeps the active settings', asy
 
 test('settings still save if temporary draft storage fails and permission is granted', async () => {
   const local = { settings: { enabled: false, endpoint: 'http://127.0.0.1:8765', token: 'old-token' } };
-  const elements = Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
+  const elements = Object.fromEntries(['settings-form', 'enabled', 'image-archiving', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
   globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
   globalThis.browser = {
     storage: {
@@ -176,7 +176,7 @@ test('settings still save if temporary draft storage fails and permission is gra
     elements.endpoint.value = 'http://localhost:9999';
     elements.token.value = 'new-token';
     await elements['settings-form'].handlers.submit({ preventDefault() {} });
-    assert.deepEqual(local.settings, { enabled: false, endpoint: 'http://localhost:9999', token: 'new-token' });
+    assert.deepEqual(local.settings, { enabled: false, imageArchiving: true, endpoint: 'http://localhost:9999', token: 'new-token' });
     assert.equal(elements.feedback.textContent, 'Settings saved.');
   } finally {
     delete globalThis.document;
@@ -187,7 +187,7 @@ test('settings still save if temporary draft storage fails and permission is gra
 test('failed recovery keeps the active configuration and reports the draft as unsaved', async () => {
   const saved = { enabled: true, endpoint: 'http://127.0.0.1:8765', token: 'old-token' };
   const draft = { endpoint: 'http://localhost:9999', token: 'new-token' };
-  const elements = Object.fromEntries(['settings-form', 'enabled', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
+  const elements = Object.fromEntries(['settings-form', 'enabled', 'image-archiving', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'].map(id => [id, { value: '', textContent: '', checked: false, handlers: {}, addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {} }]));
   globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
   globalThis.browser = {
     storage: {
@@ -208,4 +208,48 @@ test('failed recovery keeps the active configuration and reports the draft as un
     delete globalThis.document;
     delete globalThis.browser;
   }
+});
+
+test('image archiving defaults on, persists independently, and is unavailable in Firefox', async () => {
+  const ids = ['settings-form', 'enabled', 'image-archiving', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'];
+  const makeElements = () => Object.fromEntries(ids.map(id => [id, {
+    value: '', textContent: '', checked: false, disabled: id === 'image-archiving', handlers: {},
+    addEventListener(type, handler) { this.handlers[type] = handler; }, removeAttribute() {},
+  }]));
+  const local = { settings: { enabled: true, endpoint: 'http://127.0.0.1:8765', token: 'secret' } };
+  let elements = makeElements();
+  let supported = true;
+  globalThis.document = { querySelector: selector => elements[selector.slice(1)] };
+  globalThis.browser = {
+    storage: {
+      local: { get: async key => ({ [key]: structuredClone(local[key]) }), set: async value => { await new Promise(resolve => setTimeout(resolve, 1)); Object.assign(local, structuredClone(value)); } },
+      session: { get: async () => ({}) }, onChanged: { addListener() {} },
+    },
+    runtime: { sendMessage: async ({ type }) => type === 'capabilities' ? { imageCapture: supported } : { ok: true } },
+  };
+  try {
+    await import('../popup.js?image-toggle');
+    assert.equal(elements['image-archiving'].checked, true);
+    assert.equal(elements['image-archiving'].disabled, false);
+    elements['image-archiving'].checked = false;
+    const imageSave = elements['image-archiving'].handlers.change();
+    elements.enabled.checked = false;
+    const pauseSave = elements.enabled.handlers.change();
+    await Promise.all([imageSave, pauseSave]);
+    assert.equal(local.settings.imageArchiving, false);
+    assert.equal(local.settings.enabled, false);
+    assert.equal(local.settings.token, 'secret');
+    elements['image-archiving'].checked = true;
+    await elements['image-archiving'].handlers.change();
+    assert.equal(local.settings.imageArchiving, true);
+    assert.equal(local.settings.enabled, false);
+
+    supported = false;
+    elements = makeElements();
+    await import('../popup.js?image-toggle-firefox');
+    assert.equal(elements['image-archiving'].disabled, true);
+    assert.equal(elements['image-archiving'].checked, false);
+    assert.match(elements['media-status'].textContent, /unavailable/);
+    assert.equal(local.settings.imageArchiving, true);
+  } finally { delete globalThis.document; delete globalThis.browser; }
 });

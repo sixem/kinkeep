@@ -15,6 +15,10 @@ async function stillCurrent(settings) {
   const current = await getSettings();
   return current.enabled && current.endpoint === settings.endpoint && current.token === settings.token;
 }
+async function mediaStillCurrent(settings) {
+  const current = await getSettings();
+  return current.enabled && current.imageArchiving !== false && current.endpoint === settings.endpoint && current.token === settings.token;
+}
 async function sameConfiguration(settings) {
   const current = await getSettings();
   return current.enabled === settings.enabled && current.endpoint === settings.endpoint && current.token === settings.token;
@@ -178,30 +182,32 @@ async function saveJournal(accountId, kinId, entries) {
     return { ok: false, reason };
   }
 }
-// Chrome serializes resources that are already in the tab. It does not fetch
-// these URLs. Only explicitly matched image parts leave the snapshot in memory.
+// Only explicitly matched image parts leave the snapshot in memory. Browser
+// snapshot behavior may include stylesheet requests in some configurations.
 async function captureMedia(tabId, urls) {
   const settings = await getSettings();
-  if (!settings.enabled || !Number.isInteger(tabId) || !Array.isArray(urls) || !urls.length || urls.length > 100 || !urls.every(isKindroidImageUrl)) return { ok: false };
+  if (!settings.enabled || settings.imageArchiving === false || !Number.isInteger(tabId) || !Array.isArray(urls) || !urls.length || urls.length > 100 || !urls.every(isKindroidImageUrl)) return { ok: false };
   if (typeof ext.pageCapture?.saveAsMHTML !== 'function') return { ok: false, reason: 'unsupported' };
   try {
+    if (!(await mediaStillCurrent(settings))) return { ok: false };
     const snapshot = await ext.pageCapture.saveAsMHTML({ tabId });
-    if (!snapshot || snapshot.size > 40 * 1024 * 1024 || !(await stillCurrent(settings))) return { ok: false };
+    if (!snapshot || snapshot.size > 40 * 1024 * 1024 || !(await mediaStillCurrent(settings))) return { ok: false };
     const images = extractImages(await snapshot.text(), urls);
+    if (!(await mediaStillCurrent(settings))) return { ok: false };
     return { ok: true, images: [...images].map(([url, value]) => ({ url, ...value })) };
   } catch { return { ok: false }; }
 }
 async function saveMedia(accountId, kinId, items) {
   const settings = await getSettings();
-  if (!settings.enabled || typeof accountId !== 'string' || !accountId || typeof kinId !== 'string' || !kinId || !Array.isArray(items) || items.length > 8) return { ok: false };
+  if (!settings.enabled || settings.imageArchiving === false || typeof accountId !== 'string' || !accountId || typeof kinId !== 'string' || !kinId || !Array.isArray(items) || items.length > 8) return { ok: false };
   try {
-    if (!(await stillCurrent(settings))) return { ok: false };
+    if (!(await mediaStillCurrent(settings))) return { ok: false };
     const result = await request(settings, '/api/kins/media', { accountId, kinId, items });
     if (!Number.isSafeInteger(result?.inserted) || !Number.isSafeInteger(result?.unchanged) || result.inserted + result.unchanged !== items.length) throw new Error('The archive did not confirm the media batch.');
-    if (await stillCurrent(settings)) await online();
+    if (await mediaStillCurrent(settings)) await online();
     return { ok: true };
   } catch (error) {
-    if (await stillCurrent(settings)) await fail(error instanceof Error ? error.message : 'Archive request failed.');
+    if (await mediaStillCurrent(settings)) await fail(error instanceof Error ? error.message : 'Archive request failed.');
     return { ok: false };
   }
 }

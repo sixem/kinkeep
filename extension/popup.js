@@ -4,6 +4,7 @@ const ext = globalThis.browser ?? globalThis.chrome;
 
 const form = document.querySelector('#settings-form');
 const enabled = document.querySelector('#enabled');
+const imageArchiving = document.querySelector('#image-archiving');
 const endpoint = document.querySelector('#endpoint');
 const token = document.querySelector('#token');
 const test = document.querySelector('#test');
@@ -41,6 +42,7 @@ if (draft) {
 }
 let lastCaptureStatus = {};
 enabled.checked = settings.enabled;
+imageArchiving.checked = settings.imageArchiving !== false;
 endpoint.value = draft?.endpoint ?? settings.endpoint;
 token.value = draft?.token ?? settings.token;
 if (draft) feedback.textContent = recoveryFailed ? 'Could not finish saving settings. Try again.' : 'Allow access and save settings to finish.';
@@ -81,12 +83,31 @@ async function send(type) {
   catch { return { ok: false, reason: 'Extension unavailable.' }; }
 }
 const capabilities = await send('capabilities');
-if (capabilities?.imageCapture === false) mediaStatus.textContent = 'Image archiving is unavailable in this browser.';
+if (capabilities?.imageCapture === true) imageArchiving.disabled = false;
+else {
+  imageArchiving.checked = false;
+  if (capabilities?.imageCapture === false) mediaStatus.textContent = 'Image archiving is unavailable in this browser.';
+}
 if (recovered) await send('settingsChanged');
-async function persist(next = settings) { await ext.storage.local.set({ settings: next }); settings = next; await send('settingsChanged'); }
+let pendingSave = Promise.resolve();
+function persist(changes) {
+  const save = pendingSave.catch(() => {}).then(async () => {
+    const next = { ...settings, ...changes };
+    await ext.storage.local.set({ settings: next });
+    settings = next;
+    await send('settingsChanged');
+  });
+  pendingSave = save;
+  return save;
+}
 enabled.addEventListener('change', async () => {
   renderCapture(lastCaptureStatus);
-  await persist({ ...settings, enabled: enabled.checked });
+  try { await persist({ enabled: enabled.checked }); }
+  catch { enabled.checked = settings.enabled; renderCapture(lastCaptureStatus); feedback.textContent = 'Could not save settings.'; }
+});
+imageArchiving.addEventListener('change', async () => {
+  try { await persist({ imageArchiving: imageArchiving.checked }); }
+  catch { imageArchiving.checked = settings.imageArchiving !== false; feedback.textContent = 'Could not save settings.'; }
 });
 form.addEventListener('submit', async event => {
   event.preventDefault();
@@ -101,7 +122,7 @@ form.addEventListener('submit', async event => {
     const [, permission] = await Promise.allSettled([saveDraft, requestPermission]);
     if (permission.status === 'rejected') throw permission.reason;
     if (!permission.value) throw new Error('Permission was not granted. Allow access and save settings to finish.');
-    await persist({ ...settings, ...submitted });
+    await persist(submitted);
     await ext.storage.session.remove(draftKey);
     endpoint.value = normalized;
     setLink();

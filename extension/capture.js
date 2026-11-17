@@ -104,7 +104,8 @@
         if (observation.pending) schedulePlaintext();
       } else plaintext.reset();
       const journals = snapshot.journals ?? [];
-      const mediaCandidates = imageCaptureUnavailable ? [] : (globalThis.KinexportMediaCandidates?.read(identity.uid, caches, pathname, document) ?? []);
+      if (settings.imageArchiving === false) lastMediaSnapshot = '';
+      const mediaCandidates = imageCaptureUnavailable || settings.imageArchiving === false ? [] : (globalThis.KinexportMediaCandidates?.read(identity.uid, caches, pathname, document) ?? []);
       const expectedPath = visible.length || plaintextView || historyView || journals.length || mediaCandidates.length ? pathname : null;
       const profileFingerprint = await KinexportExtract.fingerprint(snapshot.profiles);
       const journalFingerprint = await KinexportExtract.fingerprint(journals);

@@ -4,7 +4,7 @@ KinExport is a local-first archive for Kindroid. A browser extension observes da
 
 **Status: early development.** Capture is best effort and depends on Kindroid's internal browser data and page layout, which can change without notice. An archive is not a complete or verified copy of a Kindroid account. Keep independent backups and check them before relying on them.
 
-The extension does not click, scroll, navigate or make requests to Kindroid. It can observe account and Kin records, messages, journal entries, and selected profile and settings fields. Chrome and Brave can also capture some already-loaded portraits and selfie previews; image capture is not yet available in Firefox. Opening and browsing a page may expose more data to the observer. Favorites, original selfies that have not been loaded, and audio capture are not currently implemented.
+The extension does not click, scroll, navigate or directly request data from Kindroid. It can observe account and Kin records, messages, journal entries, and selected profile and settings fields. Chrome and Brave can also capture some already-loaded portraits and selfie previews; image capture is not yet available in Firefox. Image archiving is on by default and can be switched off in the extension popup. In some browser configurations, the page snapshot used for images can cause the browser to request a stylesheet again. Opening and browsing a page may expose more data to the observer. Favorites, original selfies that have not been loaded, and audio capture are not currently implemented.
 
 ## Get started
 

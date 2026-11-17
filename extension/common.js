@@ -1,4 +1,4 @@
-export const DEFAULT_SETTINGS = Object.freeze({ enabled: false, endpoint: 'http://127.0.0.1:8765', token: '' });
+export const DEFAULT_SETTINGS = Object.freeze({ enabled: false, imageArchiving: true, endpoint: 'http://127.0.0.1:8765', token: '' });
 
 export function normalizeEndpoint(value) {
   const url = new URL(value.trim());

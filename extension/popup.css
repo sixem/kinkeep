@@ -24,6 +24,9 @@ main { padding-top: 2px; }
 .switch input:checked + .switch-track { border-color: #ddd; background: #fff; }
 .switch input:checked + .switch-track::after { background: #000; transform: translateX(14px); }
 .switch input:focus-visible + .switch-track { border-color: #fff; box-shadow: inset 0 0 0 2px #666; }
+.toggle-row:has(input:disabled) { color: #888; cursor: default; }
+.switch input:disabled { cursor: default; }
+.switch input:disabled + .switch-track { opacity: .5; }
 .notice, .feedback { margin: 0; color: #ff9b92; font-size: 13px; overflow-wrap: anywhere; }
 .notice:not(:empty) { padding: 0 0 11px; }
 form { border-top: 2px solid #292929; padding-top: 13px; }

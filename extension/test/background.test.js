@@ -13,6 +13,7 @@ test('background validates token, probes batches, and warns once per outage', as
   let changeDuringHealth = null;
   let failure = null;
   let snapshots = 0;
+  let duringSnapshot = null;
   globalThis.chrome = {
     storage: { local: {
       get: async key => ({ [key]: structuredClone(store[key]) }),
@@ -21,7 +22,7 @@ test('background validates token, probes batches, and warns once per outage', as
     action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
     alarms: { create: async () => {}, clear: async () => {}, onAlarm: { addListener() {} } },
     notifications: { create: async (...args) => notices.push(args) },
-    pageCapture: { saveAsMHTML: async () => { snapshots++; return new Blob(['MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="x"\r\n\r\n--x\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-Location: https://img.kindroid.ai/a.png\r\n\r\nQUJD\r\n--x--\r\n']); } },
+    pageCapture: { saveAsMHTML: async () => { snapshots++; if (duringSnapshot) duringSnapshot(); return new Blob(['MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="x"\r\n\r\n--x\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\nContent-Location: https://img.kindroid.ai/a.png\r\n\r\nQUJD\r\n--x--\r\n']); } },
     permissions: { contains: async () => true },
     runtime: {
       id: 'extension-id', getURL: path => `chrome-extension://extension-id/${path}`,
@@ -117,6 +118,17 @@ test('background validates token, probes batches, and warns once per outage', as
   const captured = await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.png'] }, tab);
   assert.deepEqual(captured, { ok: true, images: [{ url: 'https://img.kindroid.ai/a.png', mime: 'image/png', data: 'QUJD' }] });
   assert.equal(snapshots, 1);
+  store.settings.imageArchiving = false;
+  assert.equal((await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.png'] }, tab)).ok, false);
+  assert.equal(snapshots, 1);
+  const beforeDisabledSave = requests.length;
+  assert.equal((await send({ type: 'mediaSave', accountId: 'acct', kinId: 'kin', items: [{ sourceId: 's', kind: 'selfie', variant: 'preview', mime: 'image/png', data: 'QUJD' }] }, tab)).ok, false);
+  assert.equal(requests.length, beforeDisabledSave);
+  store.settings.imageArchiving = true;
+  duringSnapshot = () => { store.settings.imageArchiving = false; };
+  assert.equal((await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.png'] }, tab)).ok, false);
+  duringSnapshot = null;
+  store.settings.imageArchiving = true;
   assert.equal((await send({ type: 'mediaSave', accountId: 'acct', kinId: 'kin', items: [{ sourceId: 's', kind: 'selfie', variant: 'preview', mime: 'image/png', data: 'QUJD' }] }, tab)).ok, true);
   assert.equal(new URL(requests.at(-1).url).pathname, '/api/kins/media');
   const messages = [{ conversationId: 'c', fingerprint: 'a', content: 'one' }, { conversationId: 'c', fingerprint: 'b', content: 'two' }];

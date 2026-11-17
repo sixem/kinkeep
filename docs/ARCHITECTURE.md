@@ -16,7 +16,7 @@ Selected profile fields, journal entries and settings are stored when observed. 
 
 ## Images and availability
 
-In Chrome and Brave, the extension identifies matching, already-rendered portraits and selfie previews and uses page capture to extract resources already present in the page snapshot. It does not download the source URL itself. The snapshot may temporarily contain other page content; the extension retains only matched images and verified metadata. Gallery images are labeled as previews and may not be full-size originals. Firefox lacks this page-capture API, so its extension does not currently capture images. The server stores image bytes and creates local thumbnails for display.
+In Chrome and Brave, the extension identifies matching, already-rendered portraits and selfie previews and uses page capture to extract resources already present in the page snapshot. Image archiving defaults to on and can be disabled independently in the popup. The extension does not download the image source URL itself, but Chromium's page snapshot may request stylesheets in some browser configurations. The snapshot may temporarily contain other page content; the extension retains only matched images and verified metadata. Gallery images are labeled as previews and may not be full-size originals. Firefox lacks this page-capture API, so its extension does not currently capture images. The server stores image bytes and creates local thumbnails for display.
 
 There is no offline capture queue. When the local server is unreachable or the token is rejected, the extension shows an error and issues a debounced notification. Observations may be captured on a later scan if still available, but messages encountered during an outage can be missed.
 
