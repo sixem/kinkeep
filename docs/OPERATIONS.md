@@ -4,7 +4,7 @@ These instructions apply to the Docker Compose setup in the project root. The ar
 
 ## Start, update and stop
 
-Run `./setup.sh` for the menu or use a command directly:
+On Linux or WSL, run `./setup.sh` for the menu or use a command directly:
 
 ```sh
 ./setup.sh start
@@ -15,15 +15,23 @@ Run `./setup.sh` for the menu or use a command directly:
 ./setup.sh stop
 ```
 
+On Windows, open PowerShell in the project directory and run the menu or the same commands through `setup.ps1`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 status
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 restart
+```
+
 `update` rebuilds from the current files; `reinstall` rebuilds and recreates the application container. Neither intentionally removes the named archive volume. Avoid Docker volume removal commands unless you intend to delete the archive. `logs` follows output until interrupted with Ctrl+C. The server normally opens at <http://127.0.0.1:8765>.
 
-On Windows with WSL, Docker Desktop must be running with WSL integration enabled. The server's published port is bound to the host loopback interface. In the browser extension use the loopback URL as seen by the browser, normally `http://127.0.0.1:8765`.
+Docker Desktop must be running for either Windows path; the WSL path additionally needs Docker access from the distribution. The scripts manage the same named volume only when their Docker contexts point to the same Docker daemon. The server's published port is bound to the host loopback interface. In the browser extension use the loopback URL as seen by the browser, normally `http://127.0.0.1:8765`.
 
 ## Token and local data
 
 The first start creates `.env` with `KINEXPORT_TOKEN` if no `.env` exists; subsequent starts reuse it. Treat the file, browser extension settings, archive database and backups as sensitive. The extension stores the token in local browser storage and the dashboard stores it in session storage. The token controls API access; it does not encrypt archive contents or backups. Filesystem permissions vary by platform and mount configuration.
 
-To rotate a token, generate a new random secret of at least 32 characters, replace only the `KINEXPORT_TOKEN` value in `.env`, and run `./setup.sh restart`. Enter and save the new token in the extension popup and unlock the dashboard with it. The old token stops authorizing requests after the server restarts. Rotation does not alter the archived data. Do not put the token in URLs, screenshots, shared logs or issue reports.
+To rotate a token, generate a new random secret of at least 32 characters, replace only the `KINEXPORT_TOKEN` value in `.env`, and run `./setup.sh restart` on Linux/WSL or the Windows `restart` command above. Enter and save the new token in the extension popup and unlock the dashboard with it. The old token stops authorizing requests after the server restarts. Rotation does not alter the archived data. Do not put the token in URLs, screenshots, shared logs or issue reports.
 
 ## Export and backup
 
@@ -47,7 +55,7 @@ Transfer staging uses disk space alongside the live database. Allow several time
 
 ## Troubleshooting
 
-- **Dashboard unavailable:** Check that Docker Desktop or the Docker daemon is running, then use `./setup.sh status` and `./setup.sh logs`. Confirm that port 8765 is available on loopback.
+- **Dashboard unavailable:** Check that Docker Desktop or the Docker daemon is running, then use the setup script's `status` and `logs` commands. Confirm that port 8765 is available on loopback.
 - **Extension says unavailable or token rejected:** Check the saved server URL and access token in the popup, grant the requested server permission, then select **Test connection**. If you changed the token, update it in both the popup and the dashboard. The health endpoint alone does not validate the token.
 - **No new records:** Confirm archiving is enabled, a logged-in Kindroid tab is open, and the correct account and Kin are selected in the dashboard. After loading or reloading the extension, refresh the Kindroid tab. Browsing the relevant chat or settings may make additional already-loaded data observable.
 - **Account not verified / some data could not be captured:** The extension skips ambiguous records rather than guessing identity. Wait for Kindroid to finish loading and confirm the account. A changed Kindroid page or cache format may require an extension update.

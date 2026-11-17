@@ -15,6 +15,8 @@ The root check validates the version and extension manifest files, checks JavaSc
 
 With Docker and Compose v2 available, `./scripts/smoke-docker.sh` builds and tests an isolated container using synthetic data. It checks health, thumbnail generation, ZIP import/export and SQLite backup/restore, then cleans up its own temporary resources.
 
+On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test\setup-windows.ps1` to test the PowerShell setup script against a temporary fake Docker executable. It does not contact the Docker daemon or the live archive.
+
 ## Project layout
 
 - `extension/` contains the browser extension, passive observers and extension tests.
