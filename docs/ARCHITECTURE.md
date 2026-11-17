@@ -1,27 +1,25 @@
 # Capture and archive design
 
-KinExport has a browser extension and a local HTTP server. The extension observes information already available to the signed-in Kindroid tab and sends batches to the configured archive endpoint. The server stores records and image bytes in SQLite and serves the dashboard, API, exports and backups.
+KinExport observes an open Kindroid tab and sends records to the archive server. The server stores records and images in SQLite and serves the dashboard, exports and backups.
 
-The observer does not click, scroll, navigate or fetch resources from Kindroid. It runs extension scripts in the Kindroid page, reads available browser state and page content, and communicates with the archive server. Ordinary browsing can cause Kindroid itself to load additional data, which may then become observable. KinExport cannot guarantee complete coverage.
+The extension does not click, scroll, navigate or directly request Kindroid data. It reads browser state and page content as you browse, so archives may be incomplete. Image snapshots have a browser-dependent caveat described below.
 
 ## Identity and records
 
-The extension associates observations with the logged-in Firebase UID and verified Kin ID from the account-owned Kindroid cache. It can retain an available Firebase display name as a label, but the UID is the account identifier; the display name is not guaranteed to be a Kindroid persona name. Ambiguous or mismatched identity stops capture instead of assigning data to a guessed account.
+The extension associates records with the logged-in Firebase UID and a Kin verified in that account's cache. A Firebase display name can be saved as a label; the UID remains the account identifier. Capture stops when the account is ambiguous or mismatched.
 
-Messages are scoped to account, Kin and conversation. The collector uses a synthetic `observed-main` conversation because the observed source data does not provide a reliable conversation boundary. Stable source message IDs, timestamps and other verified metadata are stored when available. The client probes message fingerprints in batches and sends missing or changed observations. Conflicting observations are preserved as revisions under the server's merge rules. A rendered page observation can differ from source formatting; cache data takes precedence when the same source ID is observed in both forms.
+Messages belong to an account, Kin and conversation. The collector uses `observed-main` because the source does not provide a reliable conversation boundary. It batches fingerprint probes and sends missing or changed messages; conflicting observations are kept as revisions. Cached messages take precedence over rendered observations with the same source ID.
 
-The Chat History reader uses already-loaded history state to match visible entries to their IDs and timestamps. An entry without a reliable matching timestamp is skipped. Browsing history does not imply that every older message has been discovered.
-
-Selected profile fields, journal entries and settings are stored when observed. Readable text seen in the personality editor is kept separately from cached encrypted values and can include unsaved drafts. Missing fields do not mean a stored value should be deleted. Journal observations with differing text are retained without assuming their edit order.
+Chat History entries are matched to already-loaded IDs and timestamps; entries without a reliable timestamp are skipped. Profile fields, settings and journal entries are recorded when seen. Readable personality editor text is stored separately from cached encrypted values and may include unsaved drafts. Missing fields never delete existing values, and differing journal observations are retained without assuming edit order.
 
 ## Images and availability
 
-In Chrome and Brave, the extension identifies matching, already-rendered portraits and selfie previews and uses page capture to extract resources already present in the page snapshot. Image archiving defaults to on and can be disabled independently in the popup. The extension does not download the image source URL itself, but Chromium's page snapshot may request stylesheets in some browser configurations. The snapshot may temporarily contain other page content; the extension retains only matched images and verified metadata. Gallery images are labeled as previews and may not be full-size originals. Firefox lacks this page-capture API, so its extension does not currently capture images. The server stores image bytes and creates local thumbnails for display.
+In Chrome and Brave, image archiving captures matching, rendered portraits and selfie previews using a page snapshot. It is enabled by default and can be switched off in the extension popup. The extension retains only matched images and verified metadata; previews may not be full-size originals. In some Chromium configurations, creating a snapshot can cause the browser to request a stylesheet again. Firefox does not support this page-capture API.
 
-There is no offline capture queue. When the local server is unreachable or the token is rejected, the extension shows an error and issues a debounced notification. Observations may be captured on a later scan if still available, but messages encountered during an outage can be missed.
+There is no offline queue. If the server is unreachable or rejects the token, the extension warns you; data may be captured on a later scan if still available.
 
 ## Trust boundaries
 
-The default service is intended for one user on a trusted machine. The token grants archive access; it is not encryption. The database, ZIP exports, SQLite backups and extension storage can contain private data. Docker publishes only to loopback by default. Do not expose the server to a network without a separate review of authentication, transport, access control and operational risks.
+The default server is intended for one user on a trusted machine and binds to loopback. The token grants access but does not encrypt the database, backups, exports or extension storage. Review authentication, transport and access control before exposing the server to a network.
 
-The implementation depends on undocumented Kindroid browser storage and DOM structures. Those may change, so version updates or unexpected content should be validated before relying on capture. More detail on the implementation and the server's supported API is in the [extension README](../extension/README.md) and [server README](../server/README.md).
+Capture depends on undocumented Kindroid browser storage and page structure, which may change. See the [extension README](../extension/README.md) and [server README](../server/README.md) for supported data and API details.

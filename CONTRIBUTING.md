@@ -1,35 +1,33 @@
 # Contributing to KinExport
 
-KinExport is an early-stage local archive. Changes should preserve existing archives and the extension's passive capture model: it may inspect data already available in the browser and communicate with the configured archive server, but must not request data from Kindroid or automate interactions with it.
+Preserve existing archives and the passive capture model: observe data already available in the browser without directly fetching Kindroid data or automating interactions.
 
 ## Development setup
 
-Use Node.js 24 or newer and ImageMagick 7 with WebP support (`magick`) for the complete test suite. From the project root:
+Use Node.js 24 or newer and ImageMagick 7 with WebP support (`magick`). From the project root:
 
 ```sh
 npm ci --prefix server --ignore-scripts
 npm run check
 ```
 
-The root check validates the version and extension manifest files, checks JavaScript syntax, and runs both test suites. Load `extension/` as an unpacked extension in Chrome or Brave. For Firefox, run `npm run build:firefox` and load `dist/firefox/manifest.json` as a temporary add-on in `about:debugging`. Rebuild and reload the Firefox package after extension changes; refresh the Kindroid tab to load updated content scripts. Use `./setup.sh` to manage the Docker server. The root README covers setup and backups.
+Load `extension/` as an unpacked Chrome or Brave extension. For Firefox, run `npm run build:firefox` and load `dist/firefox/manifest.json` through `about:debugging`. Rebuild and reload the Firefox package after changes; refresh the Kindroid tab to reload content scripts.
 
-The Firefox build includes manifest assets and an explicit list of other runtime resources in `scripts/build-firefox.mjs`. Add new imports or popup assets to that list so they are included without packaging unrelated local files.
+The Firefox build uses an explicit runtime asset list in `scripts/build-firefox.mjs`. Add new imports and popup assets there.
 
-With Docker and Compose v2 available, `./scripts/smoke-docker.sh` builds and tests an isolated container using synthetic data. It checks health, thumbnail generation, ZIP import/export and SQLite backup/restore, then cleans up its own temporary resources.
-
-On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test\setup-windows.ps1` to test the PowerShell setup script against a temporary fake Docker executable. It does not contact the Docker daemon or the live archive.
+With Docker and Compose v2, `./scripts/smoke-docker.sh` runs an isolated test using synthetic data. On Windows, `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test\setup-windows.ps1` tests the PowerShell setup script without contacting Docker.
 
 ## Project layout
 
-- `extension/` contains the browser extension, passive observers and extension tests.
-- `server/` contains the local API, SQLite archive, dashboard, portable archive implementation and server tests.
-- `scripts/` contains checks shared by the project.
-- `docker-compose.yml` and `setup.sh` configure and manage the local container.
+- `extension/`: browser extension and capture tests.
+- `server/`: API, SQLite archive, dashboard and portable archives.
+- `scripts/`: project checks and build scripts.
+- `docker-compose.yml`, `setup.sh`, `setup.ps1`: container configuration and setup.
 
 ## Making changes
 
-- Treat chat, profile, image, account and token data as private. Use synthetic fixtures and avoid including real data in logs, screenshots or bug reports.
-- Preserve stable account and Kin identity, existing records, and import/backup behavior. Test migrations and restore paths when changing the database or archive formats.
-- Keep missing or ambiguous source data distinct from verified observations. Do not infer unsupported timestamps or identity.
-- Run `npm run check` before submitting changes. For user-facing changes, also exercise the affected flow in a browser; automated tests do not replace that check.
-- Keep the versions in the root, server and extension package files, server lockfile, extension manifest and dashboard welcome page in sync. The project check verifies them. See the [release guide](docs/RELEASING.md) for release preparation and data checks.
+- Use synthetic data; keep tokens, conversations, images and databases out of logs, screenshots and bug reports.
+- Preserve account and Kin identity, existing records, and import and backup behavior. Test migrations and restores when changing storage or archive formats.
+- Skip ambiguous source data rather than guessing timestamps or identity.
+- Run `npm run check` and exercise user-facing changes in a browser.
+- Keep version labels in sync. See the [release guide](docs/RELEASING.md).

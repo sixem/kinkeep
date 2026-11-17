@@ -1,26 +1,24 @@
 # Release preparation
 
-KinExport is an early-stage local application. This guide describes checks for a release candidate; it does not establish a publication channel or grant permission to publish one.
-
 ## Versions and checks
 
-Keep the application version synchronized in `package.json`, `server/package.json`, `server/package-lock.json` (both the top-level and root-package versions), `extension/package.json`, `extension/manifest.json`, and the welcome label in `server/public/index.html`. The extension manifest must use a version accepted by Chromium. Application version changes do not automatically change the portable archive format or database schema; those require their own compatibility and migration review.
+Keep versions synchronized in `package.json`, `server/package.json`, both package versions in `server/package-lock.json`, `extension/package.json`, `extension/manifest.json`, and the welcome label in `server/public/index.html`. Archive format and database schema changes require separate compatibility and migration review.
 
-With Node.js 24 or newer and ImageMagick 7 with WebP support installed, run from the project root:
+With Node.js 24+ and ImageMagick 7 with WebP support:
 
 ```sh
 npm ci --prefix server --ignore-scripts
 npm run check
 ```
 
-The project check verifies matching versions and manifest asset paths, checks JavaScript syntax and runs the server and extension tests. Review failures and rerun after fixes. Also exercise affected dashboard and extension flows with synthetic data in Chrome or Brave; automated checks do not prove compatibility with Kindroid's changing page and cache structures.
+The checks validate versions, manifest assets, JavaScript syntax and tests. Also exercise affected extension and dashboard flows with synthetic data in Chrome or Brave; automated tests cannot guarantee compatibility with Kindroid's page and cache.
 
 ## Data and container verification
 
-Before testing an upgrade, save a separate SQLite backup and portable ZIP outside the archive volume. Verify export, ZIP import and SQLite restore against a **separately configured test server and disposable database** using synthetic data. Confirm the test endpoint, database path and Docker volume before restoring: SQLite restore replaces the target database. Verify that imported messages, profiles and images remain readable and that a full SQLite restore preserves them. Do not test restore or remove volumes against the live archive.
+Before testing an upgrade, save a SQLite backup and portable ZIP outside the archive volume. Test ZIP import and SQLite restore on a **separately configured server with a disposable database**. Restore replaces the target database, so verify the endpoint, path and volume first. Check that messages, profiles and images survive import and restore. Never test restores or remove volumes against the live archive.
 
-Run `./scripts/smoke-docker.sh` with Docker and Compose v2 to build and exercise the candidate container with synthetic data in a disposable volume. It checks health, thumbnail generation, ZIP import/export and SQLite backup/restore; it does not publish a port or use the normal archive. This smoke test is separate from CI, which runs the Node checks without access to a container daemon. Check dashboard access and any additional affected flows separately. Check sufficient disk space and review the [operations guide](OPERATIONS.md) for size limits and recovery details. Include upgrade and compatibility testing when changing schema, import or export behavior.
+Run `./scripts/smoke-docker.sh` with Docker Compose v2 to test the candidate container in a disposable volume. It checks health, thumbnails, ZIP import/export and SQLite backup/restore; it does not publish a port or use the normal archive. CI runs Node checks without a container daemon. Check dashboard access and affected flows separately. See the [operations guide](OPERATIONS.md) for disk-space and recovery requirements. Test upgrades and compatibility when changing the schema or archive formats.
 
 ## Extension distribution
 
-The development workflow loads `extension/` directly as an unpacked Chromium extension, or builds the Firefox package with `npm run build:firefox` and loads it as a temporary add-on. Neither is a signed, reviewed or published browser-store release. A permanent Firefox installation requires Mozilla signing; public distribution would require its own packaging, review, permissions and publication process. None is assumed by this guide.
+Development uses the unpacked `extension/` in Chromium or the temporary package built with `npm run build:firefox`. Neither is a signed browser-store release. Permanent Firefox installation requires Mozilla signing; public distribution requires separate packaging and review.
