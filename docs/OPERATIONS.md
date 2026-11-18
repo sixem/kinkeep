@@ -9,7 +9,7 @@ Run the setup script from the project directory. On Windows use `powershell.exe 
 | `stop` / `restart` | Stop or restart the service |
 | `reinstall` | Rebuild and recreate the container using its existing data volume |
 
-Keep the named volume when updating or reinstalling. When switching between Windows and WSL, use the same Docker daemon to access the same archive.
+Keep the named volume when updating or reinstalling. The `kinkeep-local` project uses a separate volume from older `kinexport-local` installs. To bring an older archive into KinKeep, restore its SQLite backup or import its portable ZIP. When switching between Windows and WSL, use the same Docker daemon to access the same archive.
 
 ## Access token
 
@@ -29,7 +29,7 @@ To copy recovery files from the container to a local directory, run the followin
 
 ```sh
 mkdir -p ./kinkeep-recovery
-docker compose --project-name kinexport-local --env-file .env cp archive:/data/backups/. ./kinkeep-recovery
+docker compose --project-name kinkeep-local --env-file .env cp archive:/data/backups/. ./kinkeep-recovery
 ```
 
 Transfers use temporary disk space and run one at a time. Allow several times the archive size in free space. Uploads are limited to 64 GiB, expanded ZIP contents to 128 GiB, individual images to 8 MiB, and ZIP files to 500,000 entries. Test recovery in a disposable archive.

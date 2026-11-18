@@ -4,7 +4,7 @@ set -euo pipefail
 
 project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 cd "$project_dir"
-project_name=kinexport-local
+project_name=kinkeep-local
 env_file="$project_dir/.env"
 
 usage() {

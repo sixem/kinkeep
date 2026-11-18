@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProjectDir = $PSScriptRoot
-$ProjectName = 'kinexport-local'
+$ProjectName = 'kinkeep-local'
 $EnvFile = Join-Path $ProjectDir '.env'
 $ComposeFile = Join-Path $ProjectDir 'docker-compose.yml'
 $DockerCommand = $null

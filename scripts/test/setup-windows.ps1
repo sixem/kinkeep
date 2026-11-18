@@ -112,7 +112,7 @@ public class FakeDocker {
   Assert-True ($credentials -cmatch '^KINEXPORT_TOKEN=[0-9a-f]{64}\n$') 'The generated token must be 32 random bytes in a BOM-free env file.'
   Assert-True (-not $result.Output.Contains($credentials.Trim().Substring('KINEXPORT_TOKEN='.Length))) 'The generated token must not be printed.'
   Assert-True (-not ($result.Calls -contains 'TOKEN_WAS_INHERITED')) 'An inherited token must not reach Compose.'
-  $expectedPrefix = "compose|--project-name|kinexport-local|--env-file|$envFile|-f|$composeFile"
+  $expectedPrefix = "compose|--project-name|kinkeep-local|--env-file|$envFile|-f|$composeFile"
   Assert-True ($result.Calls -contains "$expectedPrefix|up|-d|--build") 'Start must pass the correct Compose project, paths and flags.'
 
   $expected = @{

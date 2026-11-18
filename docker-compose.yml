@@ -1,4 +1,4 @@
-name: kinexport-local
+name: kinkeep-local
 services:
   archive:
     build: ./server
