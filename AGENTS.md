@@ -1,4 +1,4 @@
-# KinExport project guidance
+# KinKeep project guidance
 
 - Preserve existing archives and their account/Kin scoping. Changes to the database, imports, exports or backups must include compatibility and recovery checks.
 - Capture is passive: inspect information already available in the Kindroid tab, without automating interaction or issuing Kindroid requests. Skip ambiguous identities and timestamps rather than guessing.

@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $temporaryParent = if ($env:KINEXPORT_TEST_TMPDIR) { $env:KINEXPORT_TEST_TMPDIR } else { [IO.Path]::GetTempPath() }
-$fixture = Join-Path $temporaryParent ('KinExport Setup Test ' + [Guid]::NewGuid().ToString('N'))
+$fixture = Join-Path $temporaryParent ('KinKeep Setup Test ' + [Guid]::NewGuid().ToString('N'))
 $bin = Join-Path $fixture 'fake docker bin'
 $log = Join-Path $fixture 'docker calls.log'
 $setup = Join-Path $fixture 'setup.ps1'

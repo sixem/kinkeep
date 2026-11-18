@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KinExport archive</title>
+  <title>KinKeep archive</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
   <header class="app-header">
-    <div class="brand"><h1><button id="home" class="brand-home" type="button" aria-label="KinExport home"><img class="brand-icon" src="/favicon.png" width="28" height="28" alt=""><span class="brand-name">KinExport</span></button></h1><span class="eyebrow">LOCAL ARCHIVE</span></div>
+    <div class="brand"><h1><button id="home" class="brand-home" type="button" aria-label="KinKeep home"><img class="brand-icon" src="/favicon.png" width="28" height="28" alt=""><span class="brand-name">KinKeep</span></button></h1><span class="eyebrow">Realtime archive</span></div>
     <button id="lock" type="button" class="secondary button-with-icon" hidden><span class="icon icon--lock" aria-hidden="true"></span><span class="button-with-icon__label">Lock archive</span></button>
   </header>
   <main>
@@ -56,7 +56,7 @@
           </div>
         </nav>
         <div class="archive-content">
-          <div class="pane welcome-panel" id="welcome-panel"><div class="welcome-content"><h2>KinExport</h2><p>Your conversations, personalities, and journals in one local archive.</p><span class="welcome-version">Version 0.1.0</span></div></div>
+          <div class="pane welcome-panel" id="welcome-panel"><div class="welcome-content"><h2>KinKeep</h2><p>Your conversations, personalities, and journals in one local archive.</p><span class="welcome-version">Version 0.1.0</span></div></div>
           <div class="pane message-panel" id="message-panel" hidden><div class="message-heading"><h2 id="messages-title">Messages</h2><div class="message-heading__actions"><div class="dropdown conversation-dropdown" id="conversation-panel" hidden><button type="button" id="conversation-trigger" class="dropdown-trigger" aria-expanded="false" aria-controls="conversation-options" aria-label="Conversation"><span id="conversation-label">Choose conversation</span><span aria-hidden="true">⌄</span></button><div id="conversation-options" class="dropdown-content" hidden><p id="conversations-help" class="muted"></p><ul id="conversations"></ul></div></div><span id="selected-message-count" class="message-count"></span></div></div><div class="message-scroll-area"><div id="messages" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div><button id="messages-scroll-top" class="message-scroll-button message-scroll-button--top" type="button" aria-label="Scroll to top of messages" aria-controls="messages" disabled><span class="icon icon--arrow-up" aria-hidden="true"></span></button><button id="messages-scroll-bottom" class="message-scroll-button message-scroll-button--bottom" type="button" aria-label="Scroll to bottom of messages" aria-controls="messages" disabled><span class="icon icon--arrow-down" aria-hidden="true"></span></button></div><div id="message-paging" class="message-paging" hidden></div></div>
           <div class="pane profile-panel" id="personality-panel" hidden><div class="message-heading"><h2 id="profile-title">Personality</h2></div><div id="profile" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div></div>
           <div class="pane profile-panel" id="settings-panel" hidden><div class="message-heading"><h2 id="settings-title">Settings</h2></div><div id="settings-profile" tabindex="0"><p class="muted empty-state">Select a Kin above to view this page.</p></div></div>

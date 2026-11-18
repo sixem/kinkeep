@@ -550,7 +550,7 @@ async function openImageViewer(state, item, source) {
     const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[blob.type] || 'img';
     const download = $('#image-viewer-download');
     download.href = imageViewerUrl;
-    const filename = () => `kinexport-${imageLabel(item).toLowerCase().replaceAll(' ', '-')}-${item.sha256.slice(0, 12)}-${downloadTimestamp()}.${extension}`;
+    const filename = () => `kinkeep-${imageLabel(item).toLowerCase().replaceAll(' ', '-')}-${item.sha256.slice(0, 12)}-${downloadTimestamp()}.${extension}`;
     download.download = filename();
     download.onclick = () => { download.download = filename(); };
     $('#image-viewer-content').scrollTop = 0;
@@ -961,7 +961,7 @@ $('#search').addEventListener('keydown', (event) => {
 async function startDownload(format) {
   const timestamp = downloadTimestamp();
   await api('/api/download-ticket', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({format, timestamp}) });
-  const link=document.createElement('a'); link.href=`/api/download/${format}`; link.download=format === 'portable' ? `kinexport-${timestamp}.zip` : `kinexport-backup-${timestamp}.sqlite3`; link.click();
+  const link=document.createElement('a'); link.href=`/api/download/${format}`; link.download=format === 'portable' ? `kinkeep-${timestamp}.zip` : `kinkeep-backup-${timestamp}.sqlite3`; link.click();
   showToast('Preparing download.');
 }
 $('#export').addEventListener('click', () => startDownload('portable').catch(showError));
@@ -970,7 +970,7 @@ $('#backup-restore').addEventListener('click', () => { closeDropdown(dropdowns[3
 $('#backup-file').addEventListener('change', async event => {
   const file=event.target.files?.[0]; if (!file) return;
   try {
-    if (!confirm(`Restore "${file.name}"? This replaces the current archive. KinExport will first save a SQLite backup of the current archive on the server.`)) return;
+    if (!confirm(`Restore "${file.name}"? This replaces the current archive. KinKeep will first save a SQLite backup of the current archive on the server.`)) return;
     $('#backup-label').textContent='Restoring…'; $('#backup-restore').disabled=true;
     const result=await api('/api/restore/sqlite',{method:'POST',headers:{'Content-Type':'application/vnd.sqlite3'},body:file}).then(r=>r.json());
     await refresh(); showToast(result.previousBackup ? 'Backup restored. The previous archive was saved on the server.' : 'Backup restored.');

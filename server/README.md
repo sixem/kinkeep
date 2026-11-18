@@ -1,64 +1,66 @@
-# KinExport archive server
+# KinKeep archive server
 
-The archive server uses Node.js 24, SQLite and ImageMagick 7 for thumbnails. For the recommended container setup, see the [main README](../README.md).
+The server stores records and images in SQLite and serves the dashboard and HTTP API. For a Docker installation, follow the [project quick start](../README.md#start-the-archive).
 
-To run locally for development:
+## Run without Docker
+
+Install Node.js 24+ and ImageMagick 7 with WebP support. Set the `KINEXPORT_TOKEN` environment variable to a random secret of at least 32 characters. Run the following from `server/`.
 
 ```sh
 npm ci --ignore-scripts
-export KINEXPORT_TOKEN="replace-with-a-random-secret-of-at-least-32-characters"
 npm start
 ```
 
-The server listens on `127.0.0.1:8765` and stores its database at `./data/kinexport.sqlite` by default. Configure `HOST`, `PORT` and `DATABASE_PATH` as needed. Docker listens on all container interfaces but publishes only to the host's loopback interface.
-
-A `KINEXPORT_TOKEN` of at least 32 characters is required. The dashboard keeps it in tab session storage until the tab closes or the archive is locked. Never put the token in a URL. The default `ALLOWED_HOSTS` permits `localhost`, `127.0.0.1` and `::1`; use a comma-separated list to override it. Keep the service on loopback unless you have a separate security design for external access.
-
-See [operations and recovery](../docs/OPERATIONS.md) for backup, restore and troubleshooting.
-
-## API
-
-API endpoints use JSON except for archive transfers. Send `Authorization: Bearer <token>` with requests; exceptions are `GET /api/health` and browser downloads using a one-use ticket. Health returns `{ "status": "ok" }` without validating the token. To verify authentication, send `{ "messages": [] }` to `POST /api/probe`.
-
-| Method and endpoint | Purpose |
+| Environment variable | Default |
 | --- | --- |
-| `GET`, `POST /api/accounts` | List accounts or upsert `{ accountId, displayName?, sourceTimestamp? }`. |
-| `GET`, `POST /api/kins` | List by `accountId`, or upsert `{ accountId, kinId, name?, sourceTimestamp? }`. The account must exist; omitted names do not erase existing names. |
-| `GET`, `POST /api/kins/profile` | Read or merge profile fields for an existing account and Kin. Each field has `value` and optional UTC `observedAt`; responses include observation history and receipt times. |
-| `GET`, `POST /api/kins/journal` | Read or merge journal entries for an account and Kin. Entries require `entryId`, UTC `createdAt` and `description`; `keywords` and `origin` are optional. Up to 500 entries per write; reads default to 50 and allow at most 100. |
-| `POST /api/probe` | Check up to 500 message fingerprints. Results, in input order, are `missing`, `changed` or `unchanged`. |
-| `POST /api/messages` | Ingest up to 500 messages scoped to an account and Kin. Returns inserted, updated and unchanged counts. |
-| `GET /api/conversations`, `GET /api/messages` | Read scoped records. Omit both `accountId` and `kinId` to read unassigned legacy data; providing only one is invalid. |
-| `GET /api/search?q=...` | Search scoped and legacy messages by case-insensitive substring, up to 100 results. SQLite's built-in case folding is ASCII-only. |
-| `GET /api/digest` | Get archive counts and latest archived time. |
-| `GET`, `POST /api/kins/media` | List or store images for an account and Kin. |
-| `GET /api/media/blob?sha256=...` | Get authenticated image bytes. |
-| `GET /api/media/thumbnail?sha256=...` | Get or generate a thumbnail; a full queue returns `503`. |
+| `KINEXPORT_TOKEN` | Required |
+| `HOST`, `PORT` | `127.0.0.1`, `8765` |
+| `DATABASE_PATH` | `./data/kinexport.sqlite` |
+| `ALLOWED_HOSTS` | `127.0.0.1,localhost,::1` (comma-separated HTTP hostnames) |
 
-For profile writes, use `{ accountId, kinId, fields: { ai_backstory: { value, observedAt? } } }`. The supported field names and types are defined by `PROFILE_FIELDS` in [server.js](server.js). Unknown fields and credentials are rejected. Omitted fields never clear stored data; null, empty strings, false and zero are distinct. Older, equal-time or undated conflicting observations are retained in history rather than replacing a dated value. Plaintext fields are separate observations and may contain unsaved editor drafts.
+## HTTP API
 
-Message probes take `{ accountId, kinId, messages: [{ conversationId, messageId?, fingerprint, captureSource? }] }`. Ingestion also requires `content`; it accepts `sender`, `timestamp` and `data` fields: `persona`, `reactions`, `chatHistoryRecordId`, `senderAiId`, `reactionsRevision` and `captureSource`. Capture source is `dom`, `history` or `cache`. Temporary DOM IDs are skipped during live capture; existing imports remain intact. Fingerprints must cover changes the client wants to save. Message IDs are scoped to account, Kin and conversation; without an ID the fingerprint is the fallback identity. A changed stable-ID message retains its previous content as a revision. Cache observations take precedence over rendered DOM observations; rendering differences can be retained as source-tagged revisions. Set the same `captureSource` in the probe and ingestion data.
+Send `Authorization: Bearer <token>` with API requests. Use `Content-Type: application/json` for JSON writes. `GET /api/health` returns `{"status":"ok"}` without credentials. An authenticated `POST /api/probe` with `{"messages":[]}` checks the token.
 
-Add `limit` (1–100) to `GET /api/messages` for newest-first pages and cursors. Use `direction=oldest` to start at the oldest page, or `direction=newer` with the returned `newerCursor` to page toward newer messages. Cursors are scoped to the account, Kin, conversation and direction. Requests without pagination parameters return all messages.
+### Accounts and records
 
-Images are deduplicated by SHA-256; source URLs are not stored. Gallery captures are marked as previews. Thumbnails are a derived local cache and can be regenerated.
+For scoped records, include both `accountId` and `kinId` in the query string for reads or in the JSON object for writes.
 
-## Transfers
+| Method | Path | Operation |
+| --- | --- | --- |
+| GET / POST | `/api/accounts` | List accounts or upsert an account by `accountId`. Optional fields include `displayName` and `sourceTimestamp`. |
+| GET / POST | `/api/kins` | List Kins by `accountId`, or upsert a Kin by account and Kin ID. Optional fields include `name` and `sourceTimestamp`. |
+| POST | `/api/inventory` | Upsert `{account, kins}` in one transaction, up to 500 Kins for that account. Returns `accountId` and `kinCount`. |
+| GET / POST | `/api/kins/profile` | Read a profile with its history, or merge supplied `fields`. Each field has a `value` and optional UTC `observedAt`. |
+| GET / POST | `/api/kins/journal` | Page through journal entries, or write up to 500 `entries`. Each requires `entryId`, UTC `createdAt`, and `description`. |
+| GET | `/api/conversations` | List conversations in scope. |
+| GET | `/api/messages` | Read messages, optionally filtered by `conversationId`. |
+| GET | `/api/search?q=…` | Search all archived messages by substring, up to 100 results. Case folding covers ASCII. |
+| GET | `/api/digest` | Read archive counts and the most recent message archive time. |
+| GET / POST | `/api/kins/media` | Page through scoped image metadata, or store up to eight images in `items`. |
+| GET | `/api/media/blob?sha256=…` | Download image bytes. |
+| GET | `/api/media/thumbnail?sha256=…` | Download a generated thumbnail. A full generation queue returns `503`. |
 
-| Method and endpoint | Purpose |
-| --- | --- |
-| `GET /api/download/portable` | Stream a portable ZIP archive. |
-| `POST /api/import/portable` | Merge an `application/zip` archive atomically. |
-| `GET /api/download/sqlite` | Stream a full SQLite online backup. |
-| `POST /api/restore/sqlite` | Replace the archive from an `application/vnd.sqlite3` backup after validation. A backup of the previous database is kept in the volume's `backups` directory. |
-| `POST /api/download-ticket` | Issue a one-use, HTTP-only download cookie valid for two minutes. Send `{ "format": "portable" }` or `{ "format": "sqlite" }`; an optional `timestamp` supplies the filename. |
+Journal entries accept optional `keywords` and `origin`. Both journal and media reads accept `limit` (1–100, default 50) and `offset`. Profile writes retain omitted fields and distinguish explicit nulls from empty strings, zero, and false. See the field types in [validation.js](validation.js).
 
-Portable ZIPs contain `manifest.json`, `README.txt`, `archive.sqlite3` and separate `media/<sha256>.<extension>` images. Imports validate schema, records and digests and reject unexpected or duplicate entries. The current version 1 SQLite schema is frozen by fingerprint. SQLite restore accepts the current schema only.
+Message reads accept `limit` (1–100) for newest-first pagination. Pass the returned `nextCursor` as `cursor` for older records, or use `direction=newer` with `newerCursor`. Use `direction=oldest` to start at the other end. Omitting both scope IDs on conversation or message reads selects unassigned records.
 
-The optional download timestamp uses `YYYY-MM-DDTHH-mm-ss+HH-mm`, with a negative offset or `Z` also accepted.
+### Message writes
 
-A message import replaces current content only when the same source ID has a valid, later `lastSeen`; otherwise conflicting content is kept as a revision. Unassigned legacy records are not automatically assigned to an account or Kin.
+1. Register the account and Kin, then send up to 500 messages to `POST /api/probe`. Include the scope IDs and a `messages` array. Each item has `conversationId`, `fingerprint`, and optional `messageId` and `captureSource`.
+2. Read the corresponding `status` in the response's `results` array. Send `missing` and `changed` items in the same scoped envelope to `POST /api/messages`. Include `content` and any observed `sender`, `timestamp`, or `data`. Put the source in `data.captureSource` for writes.
+3. Check the returned `inserted`, `updated`, and `unchanged` counts.
 
-Transfers use private staging files next to the database and run one at a time. Limits are 64 GiB per upload, 128 GiB expanded ZIP data, 8 MiB per image and 500,000 ZIP entries. Allow sufficient disk space. Backups are unencrypted; keep separate copies outside the Docker volume.
+Message identity is scoped to the conversation. The fingerprint supplies the identity when a message has no source ID. Use a fingerprint that covers every observed change you want to archive. Source values are `cache`, `history`, and `dom`. See [capture and revision handling](../docs/ARCHITECTURE.md#transfers-and-revisions).
 
-Run `npm test` to test the server.
+### Archive transfers
+
+| Method | Path | Operation |
+| --- | --- | --- |
+| GET | `/api/download/portable` | Download the portable ZIP. |
+| POST | `/api/import/portable` | Atomically merge an `application/zip` portable archive. |
+| GET | `/api/download/sqlite` | Download a full SQLite backup. |
+| POST | `/api/restore/sqlite` | Replace the database from an `application/vnd.sqlite3` backup. |
+| POST | `/api/download-ticket` | Send `{"format":"portable"}` or `{"format":"sqlite"}` to obtain a single-use browser download cookie valid for two minutes. |
+
+An optional ticket `timestamp` sets the filename suffix, for example `2026-01-15T09-30-00+01-00` or `2026-01-15T08-30-00Z`. See [operations and recovery](../docs/OPERATIONS.md#export-and-restore) for transfer limits and restore behavior.

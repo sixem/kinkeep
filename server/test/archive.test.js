@@ -5,22 +5,24 @@ import { createArchive } from '../server.js';
 const create = () => createArchive({ databasePath: ':memory:', token: 'test-token' });
 const sample = { conversationId: 'conversation-1', kinId: 'kin-1', kinName: 'Person1', messageId: 'message-1', fingerprint: 'hash-a', sender: 'Person1', timestamp: '2026-01-01T12:00:00Z', content: 'Hello' };
 
-test('older extensions cannot store optimistic DOM IDs, but archived imports are preserved', () => {
+test('live capture skips optimistic IDs across all sources and older archives still restore', () => {
   const archive = create(), restored = create();
   const scope = { accountId: 'account', kinId: 'kin' };
   const temporary = { conversationId: 'observed-main', messageId: 'local-01234567-89ab-cdef-0123-456789abcdef', fingerprint: 'pending', content: 'same text', data: { captureSource: 'dom' } };
   try {
     archive.upsertAccount({ accountId: scope.accountId }); archive.upsertKin(scope);
-    const probe = { conversationId: temporary.conversationId, messageId: temporary.messageId, fingerprint: temporary.fingerprint, captureSource: 'dom' };
-    assert.deepEqual(archive.scopedProbe(scope, [probe]), { results: [{ status: 'unchanged' }] });
-    assert.deepEqual(archive.scopedIngest(scope, [temporary]), { inserted: 0, updated: 0, unchanged: 1 });
+    for (const captureSource of ['dom', 'history', 'cache']) {
+      const probe = { conversationId: temporary.conversationId, messageId: temporary.messageId, fingerprint: temporary.fingerprint, captureSource };
+      assert.deepEqual(archive.scopedProbe(scope, [probe]), { results: [{ status: 'unchanged' }] });
+      assert.deepEqual(archive.scopedIngest(scope, [{ ...temporary, data: { captureSource } }]), { inserted: 0, updated: 0, unchanged: 1 });
+    }
     assert.equal(archive.scopedArchiveMessages(scope).length, 0);
     const stable = { ...temporary, messageId: 'stable-id', fingerprint: 'stable', data: { captureSource: 'cache' } };
     assert.equal(archive.scopedIngest(scope, [stable]).inserted, 1);
     assert.equal(archive.scopedIngest(scope, [{ ...stable, messageId: 'another-id', fingerprint: 'another' }]).inserted, 1);
     // Emulate an older archive that already contains the provisional record.
-    archive.scopedIngest(scope, [{ ...temporary, data: { captureSource: 'cache' } }]);
-    archive.db.prepare('UPDATE scoped_messages SET data=? WHERE source_id=?').run(JSON.stringify(temporary.data), temporary.messageId);
+    archive.db.prepare('INSERT INTO scoped_messages(account_id,kin_id,conversation_id,source_id,fingerprint,content,data,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?)')
+      .run(scope.accountId, scope.kinId, temporary.conversationId, temporary.messageId, temporary.fingerprint, temporary.content, JSON.stringify(temporary.data), '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
     restored.importArchive(archive.exportArchive());
     assert.equal(restored.scopedArchiveMessages(scope).length, 3);
     assert.ok(restored.scopedArchiveMessages(scope).some(message => message.messageId === temporary.messageId));
@@ -108,6 +110,16 @@ test('HTTP interface requires a token and rejects foreign hosts', async () => {
     assert.equal(probe.status, 200);
     assert.deepEqual(probe.body, { results: [] });
     assert.equal(probe.headers['Access-Control-Allow-Origin'], undefined);
+    const inventory = { account: { accountId: 'batch', displayName: 'Original' }, kins: [{ accountId: 'batch', kinId: 'first' }] };
+    const postInventory = body => request('/api/inventory', { method: 'POST', token: 'secret-token', body });
+    assert.equal((await request('/api/inventory', { method: 'POST', body: inventory })).status, 401);
+    assert.deepEqual((await postInventory(inventory)).body, { accountId: 'batch', kinCount: 1 });
+    assert.deepEqual((await postInventory(inventory)).body, { accountId: 'batch', kinCount: 1 });
+    assert.equal((await postInventory({ account: { accountId: 'batch', displayName: 'Changed' }, kins: [
+      { accountId: 'batch', kinId: 'second' }, { accountId: 'other', kinId: 'third' },
+    ] })).status, 400);
+    assert.equal(archive.accounts().find(row => row.accountId === 'batch').displayName, 'Original');
+    assert.deepEqual(archive.kins('batch').map(row => row.kinId), ['first']);
     assert.equal((await request('/api/accounts', { method: 'POST', token: 'secret-token', body: { accountId: 'a', displayName: 'User' } })).status, 200);
     assert.equal((await request('/api/kins', { method: 'POST', token: 'secret-token', body: { accountId: 'a', kinId: 'k', name: 'Kin' } })).status, 200);
     assert.equal((await request('/api/kins/profile', { method: 'POST', token: 'secret-token', body: { accountId: 'a', kinId: 'k', fields: { ai_backstory: { value: 'A story', observedAt: '2026-01-01T00:00:00.000Z' } } } })).status, 200);
@@ -334,6 +346,48 @@ test('cache capture supersedes DOM rendering and later DOM cannot downgrade it',
     [message] = archive.scopedArchiveMessages(scope);
     assert.equal(message.content, 'Complete source'); assert.equal(message.revisions.length, 1);
   } finally { archive.db.close(); }
+});
+
+test('source upgrades retain missing metadata and skip equivalent earlier versions', () => {
+  const archive = create();
+  const scope = { accountId: 'a', kinId: 'k' };
+  const history = { conversationId: 'main', messageId: 'one', content: 'Same text', fingerprint: 'history', data: { captureSource: 'history', reactions: { a: 'heart', b: 'star' } } };
+  const cache = { ...history, fingerprint: 'cache', data: { captureSource: 'cache', reactions: { b: 'star', a: 'heart' } } };
+  try {
+    archive.upsertAccount({ accountId: 'a' }); archive.upsertKin(scope);
+    archive.scopedIngest(scope, [history, { ...history, messageId: 'two' }]);
+    archive.scopedIngest(scope, [cache, { ...cache, messageId: 'two', data: { captureSource: 'cache' } }]);
+    const records = archive.scopedArchiveMessages(scope);
+    assert.deepEqual(records.find(m => m.messageId === 'one').revisions, []);
+    const [previous] = records.find(m => m.messageId === 'two').revisions;
+    assert.deepEqual(previous.data, history.data);
+  } finally { archive.db.close(); }
+});
+
+test('JSON and SQLite merges preserve distinct lower-priority observations once', () => {
+  const source = create();
+  const scope = { accountId: 'a', kinId: 'k' };
+  const history = { conversationId: 'main', messageId: 'one', content: 'Earlier text', fingerprint: 'history', data: { captureSource: 'history' } };
+  const cache = { ...history, fingerprint: 'cache', content: 'Latest text', data: { captureSource: 'cache' } };
+  try {
+    source.upsertAccount({ accountId: 'a' }); source.upsertKin(scope);
+    source.scopedIngest(scope, [history]);
+    for (const merge of [target => target.importArchive(source.exportArchive()), target => target.mergeSnapshot(source.db)]) {
+      const target = create();
+      try {
+        target.upsertAccount({ accountId: 'a' }); target.upsertKin(scope);
+        target.scopedIngest(scope, [cache]);
+        merge(target);
+        merge(target);
+        const [message] = target.scopedArchiveMessages(scope);
+        assert.equal(message.fingerprint, cache.fingerprint);
+        assert.equal(message.revisions.length, 1);
+        assert.equal(message.revisions[0].content, history.content);
+        assert.deepEqual(message.revisions[0].data, history.data);
+        assert.equal(message.revisions[0].recordedAt, source.scopedArchiveMessages(scope)[0].lastSeen);
+      } finally { target.db.close(); }
+    }
+  } finally { source.db.close(); }
 });
 
 test('original history upgrades rendered messages but does not displace cache or imported originals', () => {

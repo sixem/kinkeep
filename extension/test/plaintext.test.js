@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../plaintext.js';
-const { read, createTracker } = globalThis.KinexportPlaintext;
+const { read, createTracker } = globalThis.KinKeepPlaintext;
 const snap = { state: 'ready', account: { accountId: 'acct' }, kins: [{ accountId: 'acct', kinId: 'kin' }] };
 function textarea(label, value, options = {}) {
   const e = { tagName: 'TEXTAREA', labels: [{ textContent: label }], value, isConnected: true, hidden: false, disabled: false,

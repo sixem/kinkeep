@@ -1,28 +1,20 @@
-# KinExport browser extension
+# KinKeep browser extension
 
-The extension archives supported Kindroid data as you browse. It reads the existing browser cache and visible page; it doesn't click, scroll, navigate or directly request Kindroid data. See [capture design](../docs/ARCHITECTURE.md) for details.
+Enable **Archiving** in a signed-in Kindroid session to send observations to your archive server. For browser-specific setup, see [Connect the extension](../README.md#connect-the-extension).
 
-## Install
+## Capture coverage
 
-Start the archive server and obtain its access token, then load the extension:
+| Data | What gets saved |
+| --- | --- |
+| Messages | Cached messages and identifiable visible messages. Chat History entries need a matching loaded ID and timestamp. |
+| Profile | Supported settings and personality fields. Readable editor text is stored separately from cached encrypted values and can include unsaved drafts. |
+| Journal | Entries present in the account's cache. Opening the journal can expose more entries. |
+| Images | In Chrome and Brave, optional snapshots capture matched portraits and selfie previews. Source URLs are omitted. Firefox has no image capture. |
 
-- **Chrome or Brave:** Open `chrome://extensions` or `brave://extensions`, enable developer mode and select **Load unpacked**. Choose the `extension` directory.
-- **Firefox 140+:** Run `npm run build:firefox` from the project root. Open `about:debugging#/runtime/this-firefox`, select **Load Temporary Add-on**, and choose `dist/firefox/manifest.json`. Temporary add-ons must be reloaded after Firefox restarts; permanent distribution requires Mozilla signing.
+The extension never clicks, scrolls, or navigates Kindroid for you. Leave **Image archiving** off for zero extra Kindroid requests. When enabled, the browser can request a stylesheet while making a snapshot.
 
-Open the popup, enter the server URL and token, then select **Save settings** and allow access to the server. Test the connection and enable archiving. You can pin the popup from the browser's extensions menu.
+## Permissions
 
-The token is stored in local extension storage. Use HTTPS for non-local endpoints and configure only a server you trust. Firefox may disclose the collected data categories during installation; Kindroid authentication tokens are not sent to the archive.
+Kindroid page access lets the extension read the active account, local cache, and rendered content. It requests access to the archive host when you save the endpoint. The extension keeps its archive token and preferences in local browser storage. Kindroid authentication tokens are never sent to the archive.
 
-## Capture
-
-- The Firebase UID identifies the account. The extension records a display name when available and captures data only when the cache owner matches the signed-in account.
-- Cached messages and visible chat are associated with a verified Kin. History entries without reliable timestamps and ambiguous records are skipped. Observed messages currently share one synthetic conversation per Kin.
-- Opening **Personality** can capture readable fields, including unsaved drafts. Cached encrypted fields are preserved separately.
-- Journal entries come from the account's cache; opening the journal may expose more entries.
-- Chrome and Brave capture some visible portraits and selfie previews. The **Image archiving** switch is on by default and can be turned off without deleting archived images. Firefox doesn't support image capture. Chromium's page snapshot may re-request stylesheets in some browser configurations.
-
-The extension checks the archive server and warns when it's unavailable. There's no offline queue: data may be captured after recovery if it's still visible or cached, but coverage isn't guaranteed.
-
-## Development
-
-Run `npm run check` in this directory. After changes, reload the extension and, when necessary, refresh the Kindroid tab.
+Alarms check archive availability, notifications report connection failures, and Chromium's page capture permission supports optional image snapshots. Capture has no offline queue. Once the server is available again, only records still accessible in the tab can be retried.

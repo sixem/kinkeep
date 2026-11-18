@@ -53,6 +53,7 @@ for attempt in $(seq 1 20); do
 done
 
 docker exec -i "$container_id" node --input-type=module <<'JS'
+import { access } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createThumbnail } from './thumbnail.js';
 
@@ -70,6 +71,12 @@ async function call(path, options = {}) {
   if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);
   return response;
 }
+for (const resource of ['/', '/app.js', '/style.css', '/icons/settings.svg', '/fonts/InterVariable.woff2']) {
+  const bytes = await (await call(resource)).arrayBuffer();
+  if (!bytes.byteLength) throw new Error(`Empty dashboard asset: ${resource}`);
+}
+await access('public/fonts/INTER-LICENSE.txt');
+await access('public/icons/LUCIDE-LICENSE.txt');
 await call('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: 'example' }) });
 await call('/api/kins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: 'example', kinId: 'example', name: 'Example' }) });
 const zip = new Uint8Array(await (await call('/api/download/portable')).arrayBuffer());

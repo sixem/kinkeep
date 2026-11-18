@@ -11,7 +11,7 @@ function article(id, content, sender = 'self') {
 function doc(articles) { return { querySelector: () => ({ querySelectorAll: () => articles }) }; }
 const snapshot = { state: 'ready', kins: [{ kinId: 'kin-a' }], groups: [{ kinId: 'kin-a', messages: [{ messageId: 'cached' }] }] };
 test('DOM fallback is limited to a verified route, Kin and uncached IDs', async () => {
-  const { extractVisible } = globalThis.KinexportDom;
+  const { extractVisible } = globalThis.KinKeepDom;
   const page = doc([article('cached', 'rendered form differs from cache'), article('new', 'visible', 'other')]);
   assert.deepEqual(await extractVisible(page, '/v2/chat/kin-a/extra', snapshot), []);
   assert.deepEqual(await extractVisible(page, '/v2/chat/unknown', snapshot), []);
@@ -27,34 +27,34 @@ test('DOM fallback is limited to a verified route, Kin and uncached IDs', async 
 });
 test('conflicting visible duplicates are skipped', async () => {
   const page = doc([article('same', 'one'), article('same', 'two')]);
-  assert.deepEqual(await globalThis.KinexportDom.extractVisible(page, '/v2/chat/kin-a', snapshot), []);
+  assert.deepEqual(await globalThis.KinKeepDom.extractVisible(page, '/v2/chat/kin-a', snapshot), []);
 });
 test('optimistic local messages are skipped while stable IDs remain distinct', async () => {
   const temporary = 'local-01234567-89ab-cdef-0123-456789abcdef';
   const page = doc([article(temporary, 'same text'), article('stable-id', 'same text'), article('local-keep', 'same text')]);
-  const [group] = await globalThis.KinexportDom.extractVisible(page, '/v2/chat/kin-a', snapshot);
+  const [group] = await globalThis.KinKeepDom.extractVisible(page, '/v2/chat/kin-a', snapshot);
   assert.deepEqual(group.messages.map(message => message.messageId), ['stable-id', 'local-keep']);
 });
 test('narration, emphasis, nested formatting and whitespace are reconstructed from text nodes', async () => {
   const p = el('p', text('Hello '), el('em', text('smiles')), text(' and '), el('strong', text('speaks '), el('i', text('softly'))), text('.'));
-  assert.equal(globalThis.KinexportDom.toSourceText(p), 'Hello *smiles* and **speaks *softly***.');
+  assert.equal(globalThis.KinKeepDom.toSourceText(p), 'Hello *smiles* and **speaks *softly***.');
   const page = doc([article('new', p)]);
-  const [group] = await globalThis.KinexportDom.extractVisible(page, '/v2/chat/kin-a', snapshot);
+  const [group] = await globalThis.KinKeepDom.extractVisible(page, '/v2/chat/kin-a', snapshot);
   assert.equal(group.messages[0].content, 'Hello *smiles* and **speaks *softly***.');
-  assert.notEqual(group.messages[0].fingerprint, await globalThis.KinexportExtract.fingerprint({ ...group.messages[0], fingerprint: undefined, content: 'Hello smiles and speaks softly.' }));
+  assert.notEqual(group.messages[0].fingerprint, await globalThis.KinKeepExtract.fingerprint({ ...group.messages[0], fingerprint: undefined, content: 'Hello smiles and speaks softly.' }));
 });
 test('line breaks, paragraphs and surrounding emphasis spaces are preserved', () => {
   const root = el('div', el('p', text('first '), el('em', text(' wave ')), el('br'), text('second')), el('p', text('third')), el('div', text('fourth')));
-  assert.equal(globalThis.KinexportDom.toSourceText(root), 'first * wave *\nsecond\n\nthird\nfourth');
+  assert.equal(globalThis.KinKeepDom.toSourceText(root), 'first * wave *\nsecond\n\nthird\nfourth');
 });
 test('emphasis retains all original text-node whitespace inside delimiters', () => {
   const root = el('p', el('em', text('  smiles \n ')), el('strong', text(' bold ')));
-  assert.equal(globalThis.KinexportDom.toSourceText(root), '*  smiles \n *** bold **');
+  assert.equal(globalThis.KinKeepDom.toSourceText(root), '*  smiles \n *** bold **');
 });
 test('hidden nodes and non-content markup are ignored; literal HTML-looking text stays text', () => {
   const hidden = el('span', text('secret')); hidden.hidden = true;
   const root = el('div', text('<example> '), hidden, el('script', text('unsafe')), el('em', text('visible')));
-  assert.equal(globalThis.KinexportDom.toSourceText(root), '<example> *visible*');
+  assert.equal(globalThis.KinKeepDom.toSourceText(root), '<example> *visible*');
 });
 
 function historyArticle(id, content, sender = 'self') {
@@ -70,7 +70,7 @@ function historyPage(articles) {
 }
 test('history captures rendered narration only with matching scoped Kin, timestamp, sender and ID', async () => {
   const page = historyPage([historyArticle('cached', 'cached'), historyArticle('history-id', el('p', text('Hi '), el('em', text('smiles'))), 'other'), historyArticle('no-time', 'missing timestamp')]);
-  const { historyView, historyIds, extractHistory } = globalThis.KinexportDom;
+  const { historyView, historyIds, extractHistory } = globalThis.KinKeepDom;
   assert.equal(historyView(page.document, '/v2/kin-settings/unknown', snapshot), null);
   assert.equal(historyView(page.document, '/v2/chat/kin-a', snapshot), null);
   const view = historyView(page.document, '/v2/kin-settings/kin-a', snapshot);
@@ -88,9 +88,9 @@ test('history captures rendered narration only with matching scoped Kin, timesta
 test('history does not request or archive temporary message IDs', async () => {
   const temporary = 'local-01234567-89ab-cdef-0123-456789abcdef';
   const page = historyPage([historyArticle(temporary, 'pending'), historyArticle('stable-id', 'saved')]);
-  const view = globalThis.KinexportDom.historyView(page.document, '/v2/kin-settings/kin-a', snapshot);
-  assert.deepEqual(globalThis.KinexportDom.historyIds(view), ['stable-id']);
-  const [group] = await globalThis.KinexportDom.extractHistory(view, [
+  const view = globalThis.KinKeepDom.historyView(page.document, '/v2/kin-settings/kin-a', snapshot);
+  assert.deepEqual(globalThis.KinKeepDom.historyIds(view), ['stable-id']);
+  const [group] = await globalThis.KinKeepDom.extractHistory(view, [
     { id: temporary, timestamp: 1730000000000, isSelf: true },
     { id: 'stable-id', timestamp: 1730000000000, isSelf: true },
   ], snapshot);
@@ -98,7 +98,7 @@ test('history does not request or archive temporary message IDs', async () => {
 });
 test('history refuses ambiguous metadata, mismatched sender, duplicate conflicting content and hidden dialog', async () => {
   const page = historyPage([historyArticle('conflict', 'one'), historyArticle('conflict', 'two'), historyArticle('sender', 'three'), historyArticle('time', 'four')]);
-  const { historyView, extractHistory } = globalThis.KinexportDom;
+  const { historyView, extractHistory } = globalThis.KinKeepDom;
   const view = historyView(page.document, '/v2/kin-settings/kin-a', snapshot);
   const ms = 1730000000000;
   assert.deepEqual(await extractHistory(view, [{ id: 'conflict', timestamp: ms, isSelf: true }, { id: 'sender', timestamp: ms, isSelf: false }, { id: 'time', timestamp: ms, isSelf: true }, { id: 'time', timestamp: ms + 1, isSelf: true }], snapshot), []);
@@ -107,19 +107,19 @@ test('history refuses ambiguous metadata, mismatched sender, duplicate conflicti
 });
 test('history prefers exact original text and verified metadata over rendered formatting', async () => {
   const page = historyPage([historyArticle('id', el('p', text('Hi '), el('em', text('smiles'))), 'other')]);
-  const view = globalThis.KinexportDom.historyView(page.document, '/v2/kin-settings/kin-a', snapshot);
-  const [group] = await globalThis.KinexportDom.extractHistory(view, [{ id: 'id', timestamp: 1730000000000, isSelf: false,
+  const view = globalThis.KinKeepDom.historyView(page.document, '/v2/kin-settings/kin-a', snapshot);
+  const [group] = await globalThis.KinKeepDom.extractHistory(view, [{ id: 'id', timestamp: 1730000000000, isSelf: false,
     text: 'Hi _smiles_\n\nExact', persona: 'P', reactions: { 'kin:k': '❤️' }, reactionsRevision: 2, chatHistoryRecordId: 'record', senderAiId: 'kin-a', token: 'never' }], snapshot);
   assert.equal(group.messages[0].content, 'Hi _smiles_\n\nExact');
   assert.deepEqual(group.messages[0].data, { captureSource: 'history', persona: 'P', chatHistoryRecordId: 'record', senderAiId: 'kin-a', reactionsRevision: 2, reactions: { 'kin:k': '❤️' } });
   assert.equal(group.rendered.id, 'Hi *smiles*');
-  assert.deepEqual(await globalThis.KinexportDom.extractHistory(view, [
+  assert.deepEqual(await globalThis.KinKeepDom.extractHistory(view, [
     { id: 'id', timestamp: 1730000000000, isSelf: false, text: 'one' },
     { id: 'id', timestamp: 1730000000000, isSelf: false, text: 'two' },
   ], snapshot), []);
 });
 test('history dialog label accepts observed capitalization and whitespace only', () => {
-  const { isHistoryDialog } = globalThis.KinexportDom;
+  const { isHistoryDialog } = globalThis.KinKeepDom;
   const dialog = label => ({ getAttribute: () => label });
   assert.equal(isHistoryDialog(dialog('Chat history')), true);
   assert.equal(isHistoryDialog(dialog('  CHAT   HISTORY  ')), true);

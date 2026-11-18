@@ -60,5 +60,5 @@
     }
     return { profiles, conflicts, incompleteFields };
   }
-  globalThis.KinexportProfiles = Object.freeze({ extractProfiles });
+  globalThis.KinKeepProfiles = Object.freeze({ extractProfiles });
 })();

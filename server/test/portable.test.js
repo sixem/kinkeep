@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import yazl from 'yazl';
 import yauzl from 'yauzl';
 import { createArchive, createHttpServer } from '../server.js';
-import { streamPortable, streamBackup, importPortable, restoreBackup } from '../portable.js';
+import { streamPortable, streamBackup, importPortable, restoreBackup, validateSnapshot } from '../portable.js';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAABQAAAAeAQMAAAAW3KwoAAAAIGNIUk0AAHomAACAhAAA+gAAAID6AACAhAAA6mAAADqYAAAXcJy6UTwAAAAGUExURQAA/////3vcmSwAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gsQEg0c4s+h1gAAAAxJREFUCNdjYBgYAAAAeAAB2u2iVwAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0xMS0xNlQxODoxMzoyOCswMDowMISgOgkAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMTEtMTZUMTg6MTM6MjgrMDA6MDD1/YK1AAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTExLTE2VDE4OjEzOjI4KzAwOjAwouijagAAAABJRU5ErkJggg==';
 const timestamp='2026-01-01T12:00:00.000Z';
@@ -67,13 +67,60 @@ test('a late invalid record rolls back the entire portable import', async () => 
   } finally {src.db.close();dst.db.close();await rm(dir,{recursive:true,force:true})}
 });
 test('SQLite backup restores exactly and saves the previous archive; invalid backups change nothing', async () => {
-  const dir=await mkdtemp(join(tmpdir(),'kinexport-backup-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
+  const dir=await mkdtemp(join(tmpdir(),'kinkeep-backup-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
   try {populate(src);const expected=snapshot(src),sink=output();await streamBackup(src,sink.stream);assert.equal(sink.stream.headers['Content-Type'],'application/vnd.sqlite3');dst.upsertAccount({accountId:'other'});const before=snapshot(dst);
     await assert.rejects(restoreBackup(dst,Readable.from(Buffer.from('not sqlite')),createArchive));assert.deepEqual(snapshot(dst),before);
     const result=await restoreBackup(dst,Readable.from(sink.bytes()),createArchive);assert.equal(result.ok,true);assert.ok(result.previousBackup);assert.deepEqual(snapshot(dst),expected);assert.ok((await readdir(join(dir,'backups'))).includes(result.previousBackup));
     const recoveryPath=join(dir,'backups',result.previousBackup),saved=await readFile(recoveryPath);assert.equal(saved.subarray(0,16).toString('binary'),'SQLite format 3\u0000');
     const recovered=new DatabaseSync(recoveryPath,{readOnly:true});try {assert.equal(recovered.prepare('SELECT count(*) AS n FROM accounts WHERE account_id=?').get('other').n,1)} finally {recovered.close()}
   } finally {src.db.close();dst.db.close();await rm(dir,{recursive:true,force:true})}
+});
+
+test('snapshot validation checks user tables whose names start with sqlite', () => {
+  const src = createArchive({ databasePath: ':memory:', token: 'test-token' });
+  const dst = createArchive({ databasePath: ':memory:', token: 'test-token' });
+  try {
+    src.db.exec('CREATE TABLE sqliteExtra(note TEXT)');
+    for (const portable of [true, false]) {
+      assert.throws(() => validateSnapshot(src.db, dst.db, { portable }), /Unsupported SQLite archive schema/);
+    }
+  } finally { src.db.close(); dst.db.close(); }
+});
+
+test('restore preserves capture writes made while its recovery copy is being prepared', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kinexport-restore-race-'));
+  const src = archive(dir, 'source'), dst = archive(dir, 'target');
+  try {
+    src.upsertAccount({ accountId: 'replacement' });
+    const sink = output();
+    await streamBackup(src, sink.stream);
+    for (const writer of ['capture', 'other-connection']) {
+      const target = { ...dst, replaceSnapshot(path, stamp) {
+        if (writer === 'capture') dst.upsertAccount({ accountId: writer });
+        else {
+          const other = archive(dir, 'target');
+          try { other.upsertAccount({ accountId: writer }); } finally { other.db.close(); }
+        }
+        return dst.replaceSnapshot(path, stamp);
+      } };
+      await assert.rejects(restoreBackup(target, Readable.from(sink.bytes()), createArchive), err => err.status === 409);
+      assert.ok(dst.accounts().some(row => row.accountId === writer));
+      assert.ok(dst.accounts().every(row => row.accountId !== 'replacement'));
+      assert.deepEqual(await readdir(join(dir, 'backups')), []);
+    }
+  } finally { src.db.close(); dst.db.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('file uploads with oversized declared lengths are refused before consuming the body', async () => {
+  const dst = createArchive({ databasePath: ':memory:', token: 'test-token' });
+  try {
+    for (const upload of [importPortable, restoreBackup]) {
+      const req = new Readable({ read() { assert.fail('unexpected body read'); } });
+      req.headers = { 'content-length': String(64 * 1024 ** 3 + 1) };
+      await assert.rejects(upload(dst, req, createArchive), err => err.status === 413);
+      req.destroy();
+    }
+  } finally { dst.db.close(); }
 });
 
 test('HTTP downloads require authentication or a one-use format-specific cookie', async () => {
@@ -104,17 +151,17 @@ test('HTTP downloads require authentication or a one-use format-specific cookie'
     const ticket=await request('POST','/api/download-ticket',{token:'secret',type:'application/json',body:'{"format":"portable"}'});assert.equal(ticket.status,200);
     assert.match(ticket.headers['Set-Cookie'],/HttpOnly; SameSite=Strict/);const cookie=ticket.headers['Set-Cookie'].split(';')[0];
     const zipped=await request('GET','/api/download/portable',{cookie});assert.equal(zipped.status,200);assert.equal(zipped.headers['Content-Type'],'application/zip');
-    assert.equal(zipped.headers['Content-Disposition'],'attachment; filename="kinexport.zip"');
+    assert.equal(zipped.headers['Content-Disposition'],'attachment; filename="kinkeep.zip"');
     assert.equal((await request('GET','/api/download/portable',{cookie})).status,401);
     assert.equal((await target('POST','/api/import/portable',{type:'application/zip',body:zipped.body})).status,401);
     assert.equal((await target('POST','/api/import/portable',{token:'secret',type:'application/zip',body:zipped.body})).status,200);
     assert.deepEqual(snapshot(dst),snapshot(src));
     const raw=await request('GET','/api/download/sqlite',{token:'secret'});assert.equal(raw.status,200);assert.equal(raw.body.subarray(0,16).toString('binary'),'SQLite format 3\u0000');
-    assert.equal(raw.headers['Content-Disposition'],'attachment; filename="kinexport-backup.sqlite3"');
+    assert.equal(raw.headers['Content-Disposition'],'attachment; filename="kinkeep-backup.sqlite3"');
     for (const [format, date, expected] of [
-      ['sqlite','2026-11-17T02-45-31+01-00','kinexport-backup-2026-11-17T02-45-31+01-00.sqlite3'],
-      ['portable','2026-11-16T17-15-31-08-00','kinexport-2026-11-16T17-15-31-08-00.zip'],
-      ['sqlite','2026-11-17T01-45-31Z','kinexport-backup-2026-11-17T01-45-31Z.sqlite3'],
+      ['sqlite','2026-11-17T02-45-31+01-00','kinkeep-backup-2026-11-17T02-45-31+01-00.sqlite3'],
+      ['portable','2026-11-16T17-15-31-08-00','kinkeep-2026-11-16T17-15-31-08-00.zip'],
+      ['sqlite','2026-11-17T01-45-31Z','kinkeep-backup-2026-11-17T01-45-31Z.sqlite3'],
     ]) {
       const issued=await whenReady('POST','/api/download-ticket',{token:'secret',type:'application/json',body:JSON.stringify({format,timestamp:date})});
       assert.equal(issued.status,200);
@@ -134,6 +181,6 @@ test('HTTP downloads require authentication or a one-use format-specific cookie'
     const wrongCookie=wrong.headers['Set-Cookie'].split(';')[0];
     const bearer=await request('GET','/api/download/sqlite',{token:'secret',cookie:wrongCookie});
     assert.equal(bearer.status,200);
-    assert.equal(bearer.headers['Content-Disposition'],'attachment; filename="kinexport-backup.sqlite3"');
+    assert.equal(bearer.headers['Content-Disposition'],'attachment; filename="kinkeep-backup.sqlite3"');
   } finally {src.db.close();dst.db.close();await rm(dir,{recursive:true,force:true})}
 });

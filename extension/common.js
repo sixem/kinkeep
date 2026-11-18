@@ -1,9 +1,15 @@
-export const DEFAULT_SETTINGS = Object.freeze({ enabled: false, imageArchiving: true, endpoint: 'http://127.0.0.1:8765', token: '' });
+export const DEFAULT_SETTINGS = Object.freeze({ enabled: false, imageArchiving: false, endpoint: 'http://127.0.0.1:8765', token: '' });
 
 export function normalizeEndpoint(value) {
-  const url = new URL(value.trim());
+  let url;
+  try { url = new URL(value.trim()); }
+  catch { throw new Error('Enter a valid archive server URL.'); }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error('Enter an HTTP(S) URL without credentials, query, or fragment.');
+  }
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+  if (host === 'kindroid.ai' || host.endsWith('.kindroid.ai')) {
+    throw new Error('Choose an archive endpoint outside Kindroid.');
   }
   return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
 }

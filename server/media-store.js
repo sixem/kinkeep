@@ -17,7 +17,7 @@ function image(value, mime) {
   return imageBytes(bytes, mime);
 }
 function imageBytes(value, mime) {
-  const bytes = Buffer.from(value);
+  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
   if (!bytes.length || bytes.length > MAX_IMAGE) fail('Invalid image data');
   const valid = mime === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) :
     mime === 'image/jpeg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 :
@@ -49,12 +49,13 @@ export function createMediaStore(db, { requireScope, transact, generateThumbnail
   const getBlob = db.prepare('SELECT mime,bytes FROM media_blobs WHERE sha256=?');
   const hasBlob = db.prepare('SELECT 1 FROM media_blobs WHERE sha256=?');
   const add = db.prepare(`INSERT INTO media_items(account_id,kin_id,kind,source_id,variant,sha256,created_at,prompt,message_id,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(account_id,kin_id,kind,source_id,variant,sha256) DO UPDATE SET last_seen=max(last_seen,excluded.last_seen),first_seen=min(first_seen,excluded.first_seen),prompt=COALESCE(prompt,excluded.prompt),message_id=COALESCE(message_id,excluded.message_id)`);
+  const hasItem = db.prepare('SELECT 1 FROM media_items WHERE account_id=? AND kin_id=? AND kind=? AND source_id=? AND variant=? AND sha256=?');
   function saveInside(scope, items, importing = false) {
     requireScope(scope); const now = new Date().toISOString(); let inserted = 0;
     for (const item of items) {
       if (!importing) addBlob.run(item.sha256,item.mime,item.bytes);
-      if (!getBlob.get(item.sha256)) fail('Missing media file');
-      const exists = db.prepare('SELECT 1 FROM media_items WHERE account_id=? AND kin_id=? AND kind=? AND source_id=? AND variant=? AND sha256=?').get(scope.accountId,scope.kinId,item.kind,item.sourceId,item.variant,item.sha256);
+      else if (!hasBlob.get(item.sha256)) fail('Missing media file');
+      const exists = hasItem.get(scope.accountId,scope.kinId,item.kind,item.sourceId,item.variant,item.sha256);
       add.run(scope.accountId,scope.kinId,item.kind,item.sourceId,item.variant,item.sha256,item.createdAt,item.prompt,item.messageId,item.firstSeen || now,item.lastSeen || now);
       if (!exists) inserted++;
     }

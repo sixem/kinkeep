@@ -56,7 +56,7 @@
       const wrapper = article.parentElement;
       if (!wrapper?.id?.startsWith('v2-msg-')) continue;
       const messageId = wrapper.id.slice('v2-msg-'.length);
-      if (!messageId.trim() || messageId.length > 2048 || KinexportExtract.isProvisionalMessageId(messageId) || cached.has(messageId)) continue;
+      if (!messageId.trim() || messageId.length > 2048 || KinKeepExtract.isProvisionalMessageId(messageId) || cached.has(messageId)) continue;
       const timestamp = Number(wrapper.dataset?.chatTimestamp);
       if (!Number.isFinite(timestamp) || timestamp < 1_000_000_000_000) continue;
       const date = new Date(timestamp);
@@ -77,7 +77,7 @@
     }
     const messages = [];
     for (const record of records.values()) {
-      if (!record.conflicting) messages.push({ ...record.message, fingerprint: await KinexportExtract.fingerprint(record.message) });
+      if (!record.conflicting) messages.push({ ...record.message, fingerprint: await KinKeepExtract.fingerprint(record.message) });
     }
     return messages.length ? [{ kinId, messages }] : [];
   }
@@ -111,7 +111,7 @@
       const id = article.parentElement?.id;
       if (typeof id !== 'string' || !id.startsWith('v2-history-')) continue;
       const value = id.slice('v2-history-'.length);
-      if (value.trim() && value.length <= 2048 && !KinexportExtract.isProvisionalMessageId(value)) ids.add(value);
+      if (value.trim() && value.length <= 2048 && !KinKeepExtract.isProvisionalMessageId(value)) ids.add(value);
     }
     return [...ids];
   }
@@ -123,7 +123,7 @@
     const cached = snapshot.cacheIds?.get(view.kinId) ?? new Set(snapshot.groups.find(group => group.kinId === view.kinId)?.messages.map(message => message.messageId) ?? []);
     const metadata = new Map();
     for (const record of records) {
-      if (!record || typeof record.id !== 'string' || !record.id.trim() || record.id.length > 2048 || KinexportExtract.isProvisionalMessageId(record.id) || !Number.isFinite(record.timestamp) || record.timestamp < 1_000_000_000_000 || typeof record.isSelf !== 'boolean') continue;
+      if (!record || typeof record.id !== 'string' || !record.id.trim() || record.id.length > 2048 || KinKeepExtract.isProvisionalMessageId(record.id) || !Number.isFinite(record.timestamp) || record.timestamp < 1_000_000_000_000 || typeof record.isSelf !== 'boolean') continue;
       if (!Number.isFinite(new Date(record.timestamp).getTime())) continue;
       const current = { timestamp: record.timestamp, isSelf: record.isSelf, data: { captureSource: 'dom' } };
       if (typeof record.text === 'string' && record.text.trim() && record.text.length <= 1_000_000 && !/(?:^|:)U2FsdGVkX1[A-Za-z0-9+/=]+$/.test(record.text)) {
@@ -168,10 +168,10 @@
     }
     const messages = [], rendered = Object.create(null);
     for (const item of observed.values()) if (!item.conflicting) {
-      messages.push({ ...item.message, fingerprint: await KinexportExtract.fingerprint(item.message) });
+      messages.push({ ...item.message, fingerprint: await KinKeepExtract.fingerprint(item.message) });
       rendered[item.message.messageId] = item.rendered;
     }
     return messages.length ? [{ kinId: view.kinId, messages, rendered }] : [];
   }
-  globalThis.KinexportDom = Object.freeze({ extractVisible, isHistoryDialog, historyView, historyIds, extractHistory, toSourceText });
+  globalThis.KinKeepDom = Object.freeze({ extractVisible, isHistoryDialog, historyView, historyIds, extractHistory, toSourceText });
 })();

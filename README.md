@@ -1,47 +1,47 @@
-# KinExport
+# KinKeep
 
-KinExport archives Kindroid conversations and profile data to a local SQLite database as you browse. It includes a dashboard, search, ZIP exports and SQLite backups.
+KinKeep saves Kindroid conversations, profiles, and journal entries to a local SQLite archive as you browse. You can search messages, review earlier versions, and export your archive from the browser dashboard.
 
-**Early development:** capture is best effort and archives may be incomplete. Keep independent backups of data you want to preserve. See [how capture works](docs/ARCHITECTURE.md) for supported data and limitations.
+Capture covers data already loaded in a signed-in Kindroid tab. The extension does not fetch missing history. Optional image capture in Chrome and Brave uses a page snapshot that can reload a stylesheet. Leave **Image archiving** off (the default) for zero extra requests to Kindroid.
 
-## Setup
+## Start the archive
 
-You need Docker with Compose v2 and Chrome, Brave, or Firefox 140 or newer. On Windows, install and start [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/).
+Run one of the following commands from the project directory with Docker and Compose v2 running.
 
-### 1. Start the archive
-
-**Windows:** Open PowerShell in the project folder and run:
+**Windows PowerShell**
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 start
 ```
 
-**WSL or Linux:** Install OpenSSL, open a shell in the project folder, and run:
+**Linux or WSL**
 
 ```sh
 ./setup.sh start
 ```
 
-For WSL, also enable [Docker Desktop integration](https://docs.docker.com/desktop/features/wsl/). Run either setup script without `start` for a menu to start, stop, update or reinstall the container. Updating and reinstalling preserve the archive volume.
+The shell script uses OpenSSL to generate the access token. On WSL, enable your distribution in [Docker Desktop's WSL integration settings](https://docs.docker.com/desktop/features/wsl/).
 
-### 2. Connect your browser
+Setup starts the dashboard at [127.0.0.1:8765](http://127.0.0.1:8765) and creates an access token in the project's `.env` file. Copy the value of `KINEXPORT_TOKEN` for the next step.
 
-The setup script creates `.env` with an access token and starts the server at [127.0.0.1:8765](http://127.0.0.1:8765). Open `.env` and copy the value of `KINEXPORT_TOKEN`. Keep it private.
+## Connect the extension
 
-1. Install the extension:
-   - **Chrome or Brave:** Open `chrome://extensions` or `brave://extensions`, enable developer mode, select **Load unpacked**, and choose the `extension` folder.
-   - **Firefox:** Install Node.js 24 or newer, run `npm run build:firefox`, then open `about:debugging#/runtime/this-firefox`. Select **Load Temporary Add-on** and choose `dist/firefox/manifest.json`. Load it again after restarting Firefox.
-2. Open the extension popup, enter the server address and token, and select **Save settings**. Allow server access if prompted, test the connection, and enable **Archiving**.
-3. Open the archive from the popup and enter the same token. Browse Kindroid normally; refresh an already-open Kindroid tab after installing or reloading the extension.
+- **Chrome or Brave** — Open `chrome://extensions` or `brave://extensions`, enable developer mode, choose **Load unpacked**, and select the `extension/` folder.
+- **Firefox 140+** — With Node.js 24+ installed, run `npm run build:firefox` from the project directory. Open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `dist/firefox/manifest.json`. Repeat the loading step after restarting Firefox.
 
-The extension saves the token locally. The dashboard remembers it until you close the tab or lock the archive. Image archiving is available in Chrome and Brave.
+1. Open the extension popup. Enter the archive URL and token, choose **Save settings**, and allow access to the archive server.
+2. Choose **Test connection**, then enable **Archiving**. Refresh any Kindroid tab that was open during installation.
+3. Browse Kindroid. Choose **Open archive** in the popup and enter the same token to view captured records.
 
-## Backups
+The database persists in a Docker volume. Use **SQLite backups → Download backup** to keep an independent copy. A portable ZIP can merge records into another KinKeep archive. Both formats contain unencrypted private data.
 
-Use **Export ZIP** in the dashboard for a portable archive, or **SQLite backups** for a full database backup. Both contain private data and are unencrypted. Keep copies outside the Docker volume; reinstalling the container preserves the volume, but the volume is not a backup.
+## Documentation
 
-See [operations and recovery](docs/OPERATIONS.md) for backup, restore and troubleshooting instructions.
+- [Capture coverage and extension permissions](extension/README.md)
+- [Server operation, backups, and troubleshooting](docs/OPERATIONS.md)
+- [Capture and storage design](docs/ARCHITECTURE.md) · [HTTP API](server/README.md)
+- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
-## Development
+## License and credits
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and tests, or browse the [extension](extension/README.md), [server](server/README.md) and [architecture](docs/ARCHITECTURE.md) documentation.
+KinKeep’s original code is published without a project license. KinKeep uses [Inter](server/public/fonts/INTER-LICENSE.txt) for typography and [Lucide icons](server/public/icons/LUCIDE-LICENSE.txt) in the dashboard.

@@ -15,8 +15,15 @@ h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.025em; line
 .badge.online::before { background: #87ff8e; }
 .badge.offline { color: #ff8080; }
 .badge.offline::before { background: #ff8080; }
-main { padding-top: 2px; }
-.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 49px; font-size: 15px; font-weight: 650; cursor: pointer; user-select: none; }
+.capture-controls { padding-block: 8px; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; font-size: 15px; font-weight: 650; cursor: pointer; user-select: none; }
+.image-row { justify-content: flex-start; gap: 8px; cursor: default; }
+.image-row label { cursor: pointer; }
+.image-row .switch { margin-left: auto; }
+.image-help { position: relative; display: inline-flex; }
+.image-help button { width: 18px; height: 18px; padding: 0; border: 2px solid #888; border-radius: 50%; background: #000; color: #ddd; font: 600 12px/1 Inter, sans-serif; cursor: help; }
+.image-help [role="tooltip"] { display: none; position: absolute; z-index: 1; top: 100%; left: -85px; width: 215px; padding: 8px 10px; border: 2px solid #555; border-radius: 6px; background: #000; color: #eee; font-size: 13px; font-weight: 500; }
+.image-help:hover [role="tooltip"], .image-help:focus-within [role="tooltip"] { display: block; }
 .switch { position: relative; display: inline-flex; flex: none; width: 34px; height: 20px; }
 .switch input { position: absolute; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .switch-track { width: 100%; height: 100%; border: 2px solid #555; border-radius: 12px; background: #171717; pointer-events: none; transition: background .15s ease, border-color .15s ease; }
@@ -28,7 +35,7 @@ main { padding-top: 2px; }
 .switch input:disabled { cursor: default; }
 .switch input:disabled + .switch-track { opacity: .5; }
 .notice, .feedback { margin: 0; color: #ff9b92; font-size: 13px; overflow-wrap: anywhere; }
-.notice:not(:empty) { padding: 0 0 11px; }
+.notice:not(:empty) { padding-top: 6px; }
 form { border-top: 2px solid #292929; padding-top: 13px; }
 form label { display: block; margin: 0 0 5px; color: #cecece; font-size: 14px; font-weight: 650; }
 form input { width: 100%; min-width: 0; margin: 0 0 12px; padding: 8px 9px; border: 2px solid #444; border-radius: 6px; background: #000; color: #ededed; font: inherit; font-size: 15px; }

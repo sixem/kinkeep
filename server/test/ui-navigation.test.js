@@ -61,8 +61,8 @@ test('dashboard uses the same local timestamp for the download ticket and filena
   assert.equal(tickets[0].format, 'portable');
   assert.equal(tickets[1].format, 'sqlite');
   assert.match(tickets[0].timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:Z|[+-]\d{2}-\d{2})$/);
-  assert.equal(anchors[0].download, `kinexport-${tickets[0].timestamp}.zip`);
-  assert.equal(anchors[1].download, `kinexport-backup-${tickets[1].timestamp}.sqlite3`);
+  assert.equal(anchors[0].download, `kinkeep-${tickets[0].timestamp}.zip`);
+  assert.equal(anchors[1].download, `kinkeep-backup-${tickets[1].timestamp}.sqlite3`);
 });
 
 test('single account and conversation open automatically, and refresh keeps the selected Kin', async () => {
@@ -191,7 +191,7 @@ test('single account and conversation open automatically, and refresh keeps the 
   assert.equal(elements.get('#image-viewer-title').textContent, 'Selfie preview');
   assert.equal(elements.get('#image-viewer-prompt').value, 'Sample prompt');
   assert.equal(elements.get('#image-viewer-download').href, elements.get('#image-viewer-image').src);
-  assert.match(elements.get('#image-viewer-download').download, /^kinexport-selfie-preview-[a-f0-9]{12}-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:Z|[+-]\d{2}-\d{2})\.webp$/);
+  assert.match(elements.get('#image-viewer-download').download, /^kinkeep-selfie-preview-[a-f0-9]{12}-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:Z|[+-]\d{2}-\d{2})\.webp$/);
   const tab = shiftKey => elements.get('#image-viewer').listeners.keydown({ key:'Tab', shiftKey, preventDefault() {} });
   tab(false); assert.equal(document.activeElement, elements.get('#image-viewer-content'));
   tab(false); assert.equal(document.activeElement, elements.get('#image-viewer-prompt'));

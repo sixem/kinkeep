@@ -112,7 +112,7 @@ test('permission prompt preserves submitted settings without changing active con
     granted = true;
     elements = makeElements();
     await import('../popup.js?permission-after');
-    assert.deepEqual(local.settings, { enabled: true, imageArchiving: true, endpoint: 'http://localhost:9999', token: 'new-token' });
+    assert.deepEqual(local.settings, { enabled: true, imageArchiving: false, endpoint: 'http://localhost:9999', token: 'new-token' });
     assert.equal(session.pendingArchiveSettings, undefined);
     assert.equal(elements.token.value, 'new-token');
     assert.equal(elements.feedback.textContent, 'Settings saved.');
@@ -176,7 +176,7 @@ test('settings still save if temporary draft storage fails and permission is gra
     elements.endpoint.value = 'http://localhost:9999';
     elements.token.value = 'new-token';
     await elements['settings-form'].handlers.submit({ preventDefault() {} });
-    assert.deepEqual(local.settings, { enabled: false, imageArchiving: true, endpoint: 'http://localhost:9999', token: 'new-token' });
+    assert.deepEqual(local.settings, { enabled: false, imageArchiving: false, endpoint: 'http://localhost:9999', token: 'new-token' });
     assert.equal(elements.feedback.textContent, 'Settings saved.');
   } finally {
     delete globalThis.document;
@@ -210,7 +210,7 @@ test('failed recovery keeps the active configuration and reports the draft as un
   }
 });
 
-test('image archiving defaults on, persists independently, and is unavailable in Firefox', async () => {
+test('image archiving defaults off, persists independently, and is unavailable in Firefox', async () => {
   const ids = ['settings-form', 'enabled', 'image-archiving', 'endpoint', 'token', 'test', 'open', 'feedback', 'status', 'indicator', 'capture-status', 'media-status'];
   const makeElements = () => Object.fromEntries(ids.map(id => [id, {
     value: '', textContent: '', checked: false, disabled: id === 'image-archiving', handlers: {},
@@ -229,7 +229,8 @@ test('image archiving defaults on, persists independently, and is unavailable in
   };
   try {
     await import('../popup.js?image-toggle');
-    assert.equal(elements['image-archiving'].checked, true);
+    assert.equal(elements['image-archiving'].checked, false);
+    assert.match(elements['media-status'].textContent, /stylesheet/);
     assert.equal(elements['image-archiving'].disabled, false);
     elements['image-archiving'].checked = false;
     const imageSave = elements['image-archiving'].handlers.change();

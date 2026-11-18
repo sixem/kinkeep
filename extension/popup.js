@@ -42,7 +42,7 @@ if (draft) {
 }
 let lastCaptureStatus = {};
 enabled.checked = settings.enabled;
-imageArchiving.checked = settings.imageArchiving !== false;
+imageArchiving.checked = settings.imageArchiving === true;
 endpoint.value = draft?.endpoint ?? settings.endpoint;
 token.value = draft?.token ?? settings.token;
 if (draft) feedback.textContent = recoveryFailed ? 'Could not finish saving settings. Try again.' : 'Allow access and save settings to finish.';
@@ -83,8 +83,10 @@ async function send(type) {
   catch { return { ok: false, reason: 'Extension unavailable.' }; }
 }
 const capabilities = await send('capabilities');
-if (capabilities?.imageCapture === true) imageArchiving.disabled = false;
-else {
+if (capabilities?.imageCapture === true) {
+  imageArchiving.disabled = false;
+  mediaStatus.textContent = 'Image archiving can cause the browser to reload a Kindroid stylesheet. Leave it off for zero extra requests.';
+} else {
   imageArchiving.checked = false;
   if (capabilities?.imageCapture === false) mediaStatus.textContent = 'Image archiving is unavailable in this browser.';
 }
@@ -107,7 +109,7 @@ enabled.addEventListener('change', async () => {
 });
 imageArchiving.addEventListener('change', async () => {
   try { await persist({ imageArchiving: imageArchiving.checked }); }
-  catch { imageArchiving.checked = settings.imageArchiving !== false; feedback.textContent = 'Could not save settings.'; }
+  catch { imageArchiving.checked = settings.imageArchiving === true; feedback.textContent = 'Could not save settings.'; }
 });
 form.addEventListener('submit', async event => {
   event.preventDefault();

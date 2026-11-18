@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "KinExport",
+  "name": "KinKeep",
   "description": "Passively archive Kindroid messages to your own archive server.",
   "version": "0.1.0",
   "permissions": [
@@ -18,7 +18,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "KinExport",
+    "default_title": "KinKeep",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

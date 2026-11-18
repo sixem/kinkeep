@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manage only KinExport's Docker Compose project. Archive data is never removed.
+# Manage only KinKeep's Docker Compose project. Archive data is never removed.
 set -euo pipefail
 
 project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -9,7 +9,7 @@ env_file="$project_dir/.env"
 
 usage() {
   cat <<'USAGE'
-KinExport local archive
+KinKeep local archive
 
 Usage: ./setup.sh [command]
   start       Set up and start the archive (builds its image)
@@ -47,7 +47,7 @@ check_project_ownership() {
   for id in $ids; do
     managed=$(docker inspect --format '{{ index .Config.Labels "io.kinexport.managed" }}' "$id")
     if [[ "$managed" != true ]]; then
-      printf '%s\n' "A container in Compose project '$project_name' is not marked as KinExport-managed. Refusing to change it." >&2
+      printf '%s\n' "A container in Compose project '$project_name' is not marked as KinKeep-managed. Refusing to change it." >&2
       exit 1
     fi
   done
@@ -80,7 +80,7 @@ compose() {
 }
 
 show_status() {
-  printf '%s\n' 'KinExport containers:'
+  printf '%s\n' 'KinKeep containers:'
   docker ps -a --filter "label=com.docker.compose.project=$project_name" \
     --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
   printf '\n%s\n' 'Archive URL: http://127.0.0.1:8765'
@@ -124,7 +124,7 @@ if [[ ! -t 0 ]]; then usage; exit 0; fi
 
 run_action status
 while true; do
-  printf '\n%s\n' 'KinExport archive' '1) Start / set up' '2) Status' '3) Stop' '4) Restart' '5) Update' '6) Reinstall (preserves data)' '7) View logs' '0) Exit'
+  printf '\n%s\n' 'KinKeep archive' '1) Start / set up' '2) Status' '3) Stop' '4) Restart' '5) Update' '6) Reinstall (preserves data)' '7) View logs' '0) Exit'
   read -r -p 'Choose an option: ' choice || break
   case "$choice" in
     1) run_action start ;;

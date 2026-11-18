@@ -1,7 +1,7 @@
 import { DatabaseSync, backup } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Transform } from 'node:stream';
@@ -39,7 +39,7 @@ function openSnapshot(path) {
   return db;
 }
 function schema(db) {
-  return db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(row => [row.type,row.name,row.tbl_name,row.sql]);
+  return db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name").all().map(row => [row.type,row.name,row.tbl_name,row.sql]);
 }
 function schemaDigest(db) { return createHash('sha256').update(JSON.stringify(schema(db))).digest('hex'); }
 export function validateSnapshot(source, target, { portable = false } = {}) {
@@ -111,10 +111,10 @@ export async function streamPortable(archive, response, timestamp) {
     const zip = new yazl.ZipFile();
     zip.on('error', error => zip.outputStream.destroy(error));
     zip.addBuffer(Buffer.from(JSON.stringify(data.manifest, null, 2) + '\n'), 'manifest.json', { mode:0o100600 });
-    zip.addBuffer(Buffer.from('KinExport portable archive\n\narchive.sqlite3 contains archive metadata. Images are in media/ and named by their SHA-256 digest. The database references those files by digest; KinExport restores them during import. This archive is not encrypted.\n'), 'README.txt', { mode:0o100600 });
+    zip.addBuffer(Buffer.from('KinKeep portable archive\n\narchive.sqlite3 contains archive metadata. Images are in media/ and named by their SHA-256 digest. The database references those files by digest; KinKeep restores them during import. This archive is not encrypted.\n'), 'README.txt', { mode:0o100600 });
     zip.addFile(data.databasePath, 'archive.sqlite3', { mode:0o100600 });
     for (const name of data.media) zip.addFile(join(data.mediaDir,name), `media/${name}`, { compress:false, mode:0o100600 });
-    response.writeHead(200, { 'Content-Type':'application/zip', 'Content-Disposition':`attachment; filename="kinexport${timestamp ? `-${timestamp}` : ''}.zip"`, 'Cache-Control':'no-store' });
+    response.writeHead(200, { 'Content-Type':'application/zip', 'Content-Disposition':`attachment; filename="kinkeep${timestamp ? `-${timestamp}` : ''}.zip"`, 'Cache-Control':'no-store' });
     zip.end();
     await pipeline(zip.outputStream, response);
   } finally { await rm(dir, {recursive:true,force:true}); }
@@ -124,11 +124,14 @@ export async function streamBackup(archive, response, timestamp) {
   try {
     const path = join(dir,'kinexport.sqlite3'); await backup(archive.db,path);
     if ((await stat(path)).size > MAX_UPLOAD) throw Object.assign(new Error('Archive exceeds the SQLite backup restore limit.'),{status:413});
-    response.writeHead(200, { 'Content-Type':'application/vnd.sqlite3', 'Content-Disposition':`attachment; filename="kinexport-backup${timestamp ? `-${timestamp}` : ''}.sqlite3"`, 'Cache-Control':'no-store' });
+    response.writeHead(200, { 'Content-Type':'application/vnd.sqlite3', 'Content-Disposition':`attachment; filename="kinkeep-backup${timestamp ? `-${timestamp}` : ''}.sqlite3"`, 'Cache-Control':'no-store' });
     await pipeline(createReadStream(path),response);
   } finally { await rm(dir,{recursive:true,force:true}); }
 }
 async function receive(req, path) {
+  if (Number(req.headers?.['content-length']) > MAX_UPLOAD) {
+    throw Object.assign(new Error('File exceeds the upload limit.'), { status: 413 });
+  }
   let size = 0;
   const limiter = new Transform({ transform(chunk,_encoding,done) { size += chunk.length; done(size > MAX_UPLOAD ? Object.assign(new Error('File exceeds the upload limit.'),{status:413}) : null,chunk); } });
   await pipeline(req,limiter,createWriteStream(path,{mode:0o600,flags:'wx'}));
@@ -136,7 +139,7 @@ async function receive(req, path) {
 }
 async function extractPortable(path, dir) {
   const zip = await yauzl.openPromise(path,{ strictFileNames:true,validateEntrySizes:true });
-  const names = new Set(), media = new Map(); let total = 0, entries = 0;
+  const names = new Set(), media = new Map(); let total = 0, entries = 0, databaseDigest;
   try {
     for await (const entry of zip.eachEntry()) {
       const name = entry.fileName;
@@ -152,6 +155,7 @@ async function extractPortable(path, dir) {
       const hashing = new Transform({transform(chunk,_encoding,done){hash.update(chunk);done(null,chunk)}});
       await pipeline(await zip.openReadStreamPromise(entry),hashing,createWriteStream(output,{mode:0o600,flags:'wx'}));
       const digest = hash.digest('hex');
+      if (name === 'archive.sqlite3') databaseDigest = digest;
       if (match) {
         if (digest !== match[1] || media.has(match[1])) throw failure('Image digest mismatch or duplicate image.');
         media.set(match[1], {path:output,ext:match[2]});
@@ -162,7 +166,7 @@ async function extractPortable(path, dir) {
   let manifest; try { manifest = JSON.parse(await readFile(join(dir,'manifest.json'),'utf8')); } catch { throw failure('Invalid archive manifest.'); }
   if (!manifest || manifest.format !== FORMAT || manifest.version !== VERSION || manifest.database !== 'archive.sqlite3' || manifest.mediaDirectory !== 'media/' || !/^[0-9a-f]{64}$/.test(manifest.databaseSha256) || !Number.isSafeInteger(manifest.mediaCount) || manifest.mediaCount !== media.size) throw failure('Unsupported archive manifest.');
   const databasePath = join(dir,'archive.sqlite3');
-  if (await sha256(databasePath) !== manifest.databaseSha256) throw failure('Archive database digest mismatch.');
+  if (databaseDigest !== manifest.databaseSha256) throw failure('Archive database digest mismatch.');
   return {databasePath,media};
 }
 async function restoreMedia(path, media) {
@@ -207,9 +211,21 @@ export async function restoreBackup(archive, req, createArchive) {
       const backupDir=archive.databasePath === ':memory:' ? dir : join(dirname(archive.databasePath),'backups');
       await mkdir(backupDir,{recursive:true,mode:0o700});
       const saved=join(backupDir,`pre-restore-${new Date().toISOString().replaceAll(':','-')}-${randomUUID()}.sqlite3`);
-      await backup(archive.db,saved);
-      await chmod(saved,0o600);
-      archive.replaceSnapshot(input);
+      // Publish only a complete copy, including when backups is a separate mount.
+      const stagingDir = await mkdtemp(join(backupDir,'.recovery-'));
+      try {
+        const staged = join(stagingDir,'recovery.sqlite3');
+        const beforeBackup = archive.changeStamp();
+        await backup(archive.db,staged);
+        await chmod(staged,0o600);
+        await rename(staged,saved);
+        try { archive.replaceSnapshot(input, beforeBackup); }
+        catch (error) {
+          // A concurrent capture vetoes the restore before any records are replaced.
+          if (error.status === 409) await rm(saved);
+          throw error;
+        }
+      } finally { await rm(stagingDir, {recursive:true,force:true}); }
       return {ok:true,previousBackup:archive.databasePath === ':memory:' ? null : saved.split(/[\\/]/).at(-1)};
     } finally { source.close(); }
   } catch (error) {

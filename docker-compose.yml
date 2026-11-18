@@ -16,7 +16,7 @@ services:
     ports:
       - "127.0.0.1:8765:8765"
     environment:
-      KINEXPORT_TOKEN: "${KINEXPORT_TOKEN:?Run a KinExport setup script to create a local token}"
+      KINEXPORT_TOKEN: "${KINEXPORT_TOKEN:?Run a KinKeep setup script to create a local token}"
       HOST: "0.0.0.0"
       PORT: "8765"
       DATABASE_PATH: /data/kinexport.sqlite

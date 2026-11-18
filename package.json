@@ -1,15 +1,17 @@
 {
-  "name": "kinexport",
+  "name": "kinkeep",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "A local-first archive for passively observed Kindroid data",
   "type": "module",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
+    "build:chromium": "node scripts/build-extension.mjs chromium",
     "build:firefox": "node scripts/build-firefox.mjs",
-    "check": "node scripts/check-project.mjs && node --check server/server.js && node --check server/media-store.js && node --check server/portable.js && node --check server/thumbnail.js && node --check server/public/app.js && npm test",
+    "check": "node scripts/check-project.mjs && node --check server/server.js && node --check server/archive.js && node --check server/validation.js && node --check server/media-store.js && node --check server/portable.js && node --check server/thumbnail.js && node --check server/public/app.js && npm test",
     "test": "node --test scripts/test/*.test.mjs && npm --prefix server test && npm --prefix extension run check"
   }
 }

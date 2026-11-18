@@ -4,8 +4,8 @@ import '../cache-read.js';
 import '../profiles.js';
 import '../extract.js';
 
-const { firebaseUid } = globalThis.KinexportCache;
-const { extract } = globalThis.KinexportExtract;
+const { firebaseUid } = globalThis.KinKeepCache;
+const { extract } = globalThis.KinKeepExtract;
 function localStorage(values) {
   const entries = Object.entries(values);
   return { length: entries.length, key: index => entries[index]?.[0] ?? null, getItem: key => values[key] ?? null };

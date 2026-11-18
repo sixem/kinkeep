@@ -1,7 +1,9 @@
 # Security
 
-KinExport is intended for a single user on a trusted machine and binds to loopback by default. The access token does not encrypt the database, exports, backups or extension storage. Treat these as private.
+KinKeep is designed for one user on a trusted machine. The default Docker setup exposes the archive on loopback. Anyone with the token and access to the server can read, export, and replace the archive. The database, exports, and backups are unencrypted.
 
-Report vulnerabilities privately to the maintainer. If no private contact method is available, ask for one without posting vulnerability details or private data. Do not include tokens, real messages, images or databases in reports.
+## Reporting a vulnerability
 
-See [operations and recovery](docs/OPERATIONS.md) for token rotation and recovery, and [architecture](docs/ARCHITECTURE.md) for capture and trust boundaries.
+Contact the maintainer privately. If you need a reporting address, request one without posting vulnerability details publicly. Use synthetic examples and omit tokens, conversations, profile text, images, and databases.
+
+See [token rotation and recovery](docs/OPERATIONS.md).

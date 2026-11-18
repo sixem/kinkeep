@@ -18,6 +18,23 @@
     if (ids.size !== 1) return { state: 'identity-uncertain' };
     return { state: 'ready', uid: [...ids][0], ...(names.size === 1 ? { displayName: [...names][0] } : {}) };
   }
+  function accountScope(uid, caches) {
+    const validId = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 2048;
+    if (!validId(uid)) return { state: 'identity-uncertain' };
+    if (!Array.isArray(caches) || caches.length === 0) return { state: 'waiting' };
+    if (caches.length !== 1 || caches[0]?.ownerUid !== uid) return { state: 'identity-uncertain' };
+
+    const queries = caches[0]?.client?.clientState?.queries;
+    if (!Array.isArray(queries)) return { state: 'waiting' };
+    const users = queries.filter(query => {
+      const key = query?.queryKey;
+      return Array.isArray(key) && key.length === 3 && key[0] === 'v2' && key[1] === 'user' && key[2] === uid;
+    });
+    const kinIds = users.length === 1 ? users[0]?.state?.data?.aiList : null;
+    if (!Array.isArray(kinIds)) return { state: 'waiting' };
+    if (!kinIds.every(validId) || new Set(kinIds).size !== kinIds.length) return { state: 'identity-uncertain' };
+    return { state: 'ready', queries, kinIds };
+  }
   async function getAuthenticatedCaches(indexedDB) {
     // Listing first avoids creating a database when Kindroid has not made one.
     if (typeof indexedDB.databases !== 'function') throw new Error('Cache discovery is unavailable.');
@@ -42,5 +59,5 @@
       };
     });
   }
-  globalThis.KinexportCache = Object.freeze({ firebaseUid, getAuthenticatedCaches });
+  globalThis.KinKeepCache = Object.freeze({ firebaseUid, getAuthenticatedCaches, accountScope });
 })();

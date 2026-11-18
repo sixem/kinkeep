@@ -1,4 +1,4 @@
-# Manage only KinExport's Docker Compose project. Archive data is never removed.
+# Manage only KinKeep's Docker Compose project. Archive data is never removed.
 [CmdletBinding()]
 param(
   [Parameter(Position = 0)]
@@ -14,7 +14,7 @@ $DockerCommand = $null
 
 function Show-Usage {
   @'
-KinExport local archive
+KinKeep local archive
 
 Usage: .\setup.ps1 [command]
   start       Set up and start the archive (builds its image)
@@ -50,7 +50,7 @@ function Test-ProjectOwnership {
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect Docker container labels.' }
     $labels = $json | ConvertFrom-Json
     if ($null -eq $labels -or $labels.'io.kinexport.managed' -ne 'true') {
-      throw "A container in Compose project '$ProjectName' is not marked as KinExport-managed. Refusing to change it."
+      throw "A container in Compose project '$ProjectName' is not marked as KinKeep-managed. Refusing to change it."
     }
   }
 }
@@ -105,7 +105,7 @@ function Invoke-Compose {
 }
 
 function Show-Status {
-  Write-Output 'KinExport containers:'
+  Write-Output 'KinKeep containers:'
   & $DockerCommand ps -a --filter "label=com.docker.compose.project=$ProjectName" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
   if ($LASTEXITCODE -ne 0) { throw 'Could not read Docker container status.' }
   Write-Output "`nArchive URL: http://127.0.0.1:8765"
@@ -145,7 +145,7 @@ try {
   if ([Console]::IsInputRedirected) { Show-Usage; exit 0 }
   Invoke-Action 'status'
   while ($true) {
-    Write-Output "`nKinExport archive`n1) Start / set up`n2) Status`n3) Stop`n4) Restart`n5) Update`n6) Reinstall (preserves data)`n7) View logs`n0) Exit"
+    Write-Output "`nKinKeep archive`n1) Start / set up`n2) Status`n3) Stop`n4) Restart`n5) Update`n6) Reinstall (preserves data)`n7) View logs`n0) Exit"
     $choice = Read-Host 'Choose an option'
     switch ($choice) {
       '1' { Invoke-Action 'start' }

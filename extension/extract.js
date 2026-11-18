@@ -16,15 +16,9 @@
     return [...new Uint8Array(hash)].map(part => part.toString(16).padStart(2, '0')).join('');
   }
   async function extract(uid, caches) {
-    if (!isId(uid)) return { state: 'identity-uncertain' };
-    if (!Array.isArray(caches) || caches.length === 0) return { state: 'waiting' };
-    if (caches.length !== 1 || caches[0]?.ownerUid !== uid) return { state: 'identity-uncertain' };
-    const queries = caches[0]?.client?.clientState?.queries;
-    if (!Array.isArray(queries)) return { state: 'waiting' };
-    const userQueries = queries.filter(q => Array.isArray(q?.queryKey) && q.queryKey.length === 3 && keyIs(q.queryKey, 'v2', 'user', uid));
-    if (userQueries.length !== 1 || !Array.isArray(userQueries[0]?.state?.data?.aiList)) return { state: 'waiting' };
-    const ids = userQueries[0].state.data.aiList;
-    if (!ids.every(isId) || new Set(ids).size !== ids.length) return { state: 'identity-uncertain' };
+    const scope = KinKeepCache.accountScope(uid, caches);
+    if (scope.state !== 'ready') return scope;
+    const { queries, kinIds: ids } = scope;
     const known = new Set(ids);
     const names = new Map();
     function considerName(doc, updatedAt) {
@@ -44,7 +38,7 @@
         for (const doc of data) considerName(doc, updatedAt);
       } else if (key.length === 4 && known.has(key[3]) && data?.ai_id === key[3]) considerName(data, updatedAt);
     }
-    const profileResult = KinexportProfiles.extractProfiles(uid, ids, queries);
+    const profileResult = KinKeepProfiles.extractProfiles(uid, ids, queries);
     const kins = ids.map(kinId => ({ accountId: uid, kinId, ...(names.get(kinId)?.value ? { name: names.get(kinId).value } : {}) }));
     let incompleteFields = 0;
     const recordsByKin = new Map(ids.map(id => [id, new Map()]));
@@ -129,5 +123,5 @@
     }
     return { state: 'ready', account: { accountId: uid }, kins, profiles: profileResult.profiles, groups, journals, conflicts: conflicts + profileResult.conflicts, incompleteFields: incompleteFields + profileResult.incompleteFields, cacheIds };
   }
-  globalThis.KinexportExtract = Object.freeze({ extract, fingerprint, isProvisionalMessageId });
+  globalThis.KinKeepExtract = Object.freeze({ extract, fingerprint, isProvisionalMessageId });
 })();

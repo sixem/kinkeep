@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createArchive } from '../../server/server.js';
+import '../cache-read.js';
 import '../profiles.js';
 import '../extract.js';
 import '../dom-extract.js';
@@ -12,7 +13,7 @@ test('extracted message is accepted by the real scoped archive and deduplicated'
     { queryKey: ['v2', 'kins', uid, 'test-kin'], state: { data: { uid, ai_id: 'test-kin', ai_name: 'Test Kin' } } },
     { queryKey: ['v2', 'chat-messages', uid, 'test-kin'], state: { data: [{ id: 'message-id', text: 'Hello', isSelf: false, senderAiId: 'test-kin', timestamp: 1730000000000, reactions: { 'kin:test-kin': '❤️' }, reactionsRevision: 1, persona: '', chatHistoryRecordId: 'history-id' }] } },
   ] } } };
-  const result = await globalThis.KinexportExtract.extract(uid, [cache]);
+  const result = await globalThis.KinKeepExtract.extract(uid, [cache]);
   const archive = createArchive({ databasePath: ':memory:', token: 'test-token' });
   try {
     archive.upsertAccount(result.account);
@@ -35,7 +36,7 @@ test('two browsers skip an optimistic message and preserve genuinely repeated se
     classList: ['test_align-self'], querySelectorAll: () => [{ nodeType: 3, nodeValue: 'Repeated text' }] };
   const document = { querySelector: () => ({ querySelectorAll: () => [article] }) };
   const view = { state: 'ready', kins: [{ kinId }], groups: [] };
-  assert.deepEqual(await globalThis.KinexportDom.extractVisible(document, `/v2/chat/${kinId}`, view), []);
+  assert.deepEqual(await globalThis.KinKeepDom.extractVisible(document, `/v2/chat/${kinId}`, view), []);
   const cache = { ownerUid: uid, client: { clientState: { queries: [
     { queryKey: ['v2', 'user', uid], state: { data: { aiList: [kinId] } } },
     { queryKey: ['v2', 'chat-messages', uid, kinId], state: { data: [
@@ -43,7 +44,7 @@ test('two browsers skip an optimistic message and preserve genuinely repeated se
       { id: 'stable-two', text: 'Repeated text', isSelf: true, timestamp: 1730000010000 },
     ] } },
   ] } } };
-  const result = await globalThis.KinexportExtract.extract(uid, [cache]);
+  const result = await globalThis.KinKeepExtract.extract(uid, [cache]);
   const archive = createArchive({ databasePath: ':memory:', token: 'test-token' });
   try {
     archive.upsertAccount(result.account);
@@ -100,7 +101,7 @@ test('observed profile fields integrate with SQLite without stale or missing-fie
     { queryKey: ['v2', 'user', uid], state: { data: { aiList: [kinId] } } },
     { queryKey: ['v2', 'kins', uid, kinId], state: { dataUpdatedAt: observedMs, data: { uid, ai_id: kinId, ai_name: 'A', ai_backstory: 'story', ai_memory: '', time_awareness: false, selected_voice: 0, user_set_temperature: null, proactive_engine: 'v1', voice_call_unified_context: true, background_settings: { background_url: 'https://example.invalid/private' } } } },
   ] } } };
-  const extracted = await globalThis.KinexportExtract.extract(uid, [snapshot]);
+  const extracted = await globalThis.KinKeepExtract.extract(uid, [snapshot]);
   const archive = createArchive({ databasePath: ':memory:', token: 'test-token' });
   try {
     archive.upsertAccount(extracted.account); archive.upsertKin(extracted.kins[0]);
@@ -137,7 +138,7 @@ test('owner-verified cached journals round-trip through the scoped archive witho
       { id: 'journal-id', created: 1730000000000, description: 'A remembered day', keywords: ['day'], origin: 'ai' },
     ] }] } } },
   ] } } };
-  const extracted = await globalThis.KinexportExtract.extract(uid, [snapshot]);
+  const extracted = await globalThis.KinKeepExtract.extract(uid, [snapshot]);
   const archive = createArchive({ databasePath: ':memory:', token: 'test-token' });
   const scope = { accountId: uid, kinId };
   try {

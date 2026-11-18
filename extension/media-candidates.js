@@ -5,20 +5,17 @@
   const isPlain = value => typeof value === 'string' && value.length <= 100000 && !/(?:^|:)U2FsdGVkX1[A-Za-z0-9+/=]+$/.test(value);
   function read(uid, caches, pathname, document) {
     const path = /^\/v2\/chat\/([^/]+)\/?$/.exec(pathname);
-    if (!isId(uid) || !path || !Array.isArray(caches) || caches.length !== 1 || caches[0]?.ownerUid !== uid) return [];
+    if (!path) return [];
     let kinId; try { kinId = decodeURIComponent(path[1]); } catch { return []; }
-    const queries = caches[0]?.client?.clientState?.queries;
-    if (!Array.isArray(queries)) return [];
-    const users = queries.filter(q => Array.isArray(q.queryKey) && q.queryKey.length === 3 && q.queryKey[0] === 'v2' && q.queryKey[1] === 'user' && q.queryKey[2] === uid);
-    const ids = users.length === 1 ? users[0]?.state?.data?.aiList : null;
-    if (!Array.isArray(ids) || !ids.every(isId) || new Set(ids).size !== ids.length || !ids.includes(kinId)) return [];
+    const scope = KinKeepCache.accountScope(uid, caches);
+    if (scope.state !== 'ready' || !scope.kinIds.includes(kinId)) return [];
     const images = [...document.images].filter(img => {
       const rect = img.getBoundingClientRect(); const style = document.defaultView?.getComputedStyle(img);
       if (!img.complete || !img.naturalWidth || !img.naturalHeight || !rect.width || !rect.height || style?.display === 'none' || style?.visibility === 'hidden') return false;
       try { const url = new URL(img.currentSrc || img.src); return url.protocol === 'https:' && !url.username && !url.password && (url.hostname === 'kindroid.ai' || url.hostname.endsWith('.kindroid.ai')); } catch { return false; }
     });
     const records = new Map();
-    for (const query of queries) {
+    for (const query of scope.queries) {
       const key = query?.queryKey;
       if (!Array.isArray(key) || key[0] !== 'v2' || key[1] !== 'selfies' || key[2] !== uid || key[3] !== kinId || !Array.isArray(query.state?.data)) continue;
       for (const item of query.state.data.slice(0, 1000)) {
@@ -40,5 +37,5 @@
     const counts = new Map(); for (const item of result) counts.set(item.url, (counts.get(item.url) || 0) + 1);
     return result.filter(item => counts.get(item.url) === 1).slice(0, 100);
   }
-  globalThis.KinexportMediaCandidates = Object.freeze({ read });
+  globalThis.KinKeepMediaCandidates = Object.freeze({ read });
 })();

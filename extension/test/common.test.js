@@ -8,6 +8,10 @@ test('normalizes archive endpoints and requests only the configured host', () =>
   for (const url of ['file:///etc/passwd', 'https://user:secret@example.com', 'http://localhost/?query=1', 'https://localhost/#hash']) {
     assert.throws(() => normalizeEndpoint(url));
   }
+  for (const url of ['https://Kindroid.ai', 'http://kindroid.ai.:8000/api', 'https://img.kindroid.ai/images']) {
+    assert.throws(() => normalizeEndpoint(url), /outside Kindroid/);
+  }
+  assert.equal(normalizeEndpoint('https://kindroid.ai.example.com/'), 'https://kindroid.ai.example.com');
 });
 
 test('image snapshots only allow credential-free HTTPS Kindroid URLs', () => {

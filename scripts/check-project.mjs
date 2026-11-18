@@ -39,4 +39,4 @@ for (const path of new Set(extensionFiles)) {
 
 const dashboard = await readFile(resolve(root, 'server/public/index.html'), 'utf8');
 if (!dashboard.includes(`Version ${project.version}`)) throw new Error('Dashboard welcome version does not match project version');
-console.log(`KinExport ${project.version}: versions and extension manifest files verified.`);
+console.log(`KinKeep ${project.version}: versions and extension manifest files verified.`);

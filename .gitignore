@@ -11,6 +11,8 @@ dist/
 *.db
 *.db-*
 *.zip
+*.mhtml
+*.har
 server/data/
 coverage/
 

@@ -74,5 +74,5 @@
       },
     };
   }
-  globalThis.KinexportPlaintext = Object.freeze({ read, createTracker });
+  globalThis.KinKeepPlaintext = Object.freeze({ read, createTracker });
 })();

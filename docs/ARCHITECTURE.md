@@ -1,25 +1,19 @@
-# Capture and archive design
+# Architecture
 
-KinExport observes an open Kindroid tab and sends records to the archive server. The server stores records and images in SQLite and serves the dashboard, exports and backups.
+KinKeep has two components. The extension reads supported Kindroid data and sends it to the configured archive. The server stores records and image bytes in SQLite and serves the dashboard and HTTP API.
 
-The extension does not click, scroll, navigate or directly request Kindroid data. It reads browser state and page content as you browse, so archives may be incomplete. Image snapshots have a browser-dependent caveat described below.
+## Capture and identity
 
-## Identity and records
+The content scripts read Kindroid's local cache and rendered page. A page-world bridge can inspect already-loaded Chat History records for visible message IDs. Capture requires a signed-in Firebase UID matching the cache owner. A Kin must belong to that account. The UID and Kin ID determine ownership even if their display names change.
 
-The extension associates records with the logged-in Firebase UID and a Kin verified in that account's cache. A Firebase display name can be saved as a label; the UID remains the account identifier. Capture stops when the account is ambiguous or mismatched.
+Messages are scoped by account, Kin, and conversation. The collector uses one conversation ID, `observed-main`, per Kin because it cannot verify conversation boundaries. It skips temporary IDs and ambiguous observations.
 
-Messages belong to an account, Kin and conversation. The collector uses `observed-main` because the source does not provide a reliable conversation boundary. It skips temporary message IDs, batches fingerprint probes and sends missing or changed messages; conflicting observations are kept as revisions. Cached messages take precedence over rendered observations with the same source ID.
+## Transfers and revisions
 
-Chat History entries are matched to already-loaded IDs and timestamps; entries without a reliable timestamp are skipped. Profile fields, settings and journal entries are recorded when seen. Readable personality editor text is stored separately from cached encrypted values and may include unsaved drafts. Missing fields never delete existing values, and differing journal observations are retained without assuming edit order.
+The extension registers the account and its Kins, then probes the server with message IDs and fingerprints. It sends message bodies only for missing or changed observations. Each tab remembers acknowledged records in memory and rechecks them when its account or archive settings change. A failed write invalidates those acknowledgements so a later scan can recover.
 
-## Images and availability
+For a given message ID, the server prefers cached data, then loaded Chat History, then visible chat. A change that would lose earlier text or metadata preserves it as a revision. Profile updates merge by field. Omitted fields retain their values, and older conflicting observations go into history. Journal entries retain differing observations without assuming an edit order.
 
-In Chrome and Brave, image archiving captures matching, rendered portraits and selfie previews using a page snapshot. It is enabled by default and can be switched off in the extension popup. The extension retains only matched images and verified metadata; previews may not be full-size originals. In some Chromium configurations, creating a snapshot can cause the browser to request a stylesheet again. Firefox does not support this page-capture API.
+Images are keyed by SHA-256. Scoped media records point to the shared image bytes, and the server generates thumbnails locally on demand.
 
-There is no offline queue. If the server is unreachable or rejects the token, the extension warns you; data may be captured on a later scan if still available.
-
-## Trust boundaries
-
-The default server is intended for one user on a trusted machine and binds to loopback. The token grants access but does not encrypt the database, backups, exports or extension storage. Review authentication, transport and access control before exposing the server to a network.
-
-Capture depends on undocumented Kindroid browser storage and page structure, which may change. See the [extension README](../extension/README.md) and [server README](../server/README.md) for supported data and API details.
+See the [extension guide](../extension/README.md) for capture coverage and the [server reference](../server/README.md) for the API.

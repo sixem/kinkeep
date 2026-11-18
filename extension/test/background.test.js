@@ -44,7 +44,11 @@ test('background validates token, probes batches, and warns once per outage', as
       if (pauseDuringProbe) store.settings.enabled = false;
       return { ok: true, json: async () => ({ results: messages.map((_, i) => ({ status: i === 0 ? 'unchanged' : 'missing' })) }) };
     }
-    if (url.endsWith('/api/accounts') || url.endsWith('/api/kins') || url.endsWith('/api/kins/profile')) return { ok: true, json: async () => ({ ok: true }) };
+    if (url.endsWith('/api/inventory')) {
+      const { account, kins } = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ accountId: account.accountId, kinCount: kins.length }) };
+    }
+    if (url.endsWith('/api/kins/profile')) return { ok: true, json: async () => ({ inserted: 1, updated: 0, unchanged: 0, historical: 0 }) };
     if (url.endsWith('/api/kins/journal')) return { ok: true, json: async () => ({ inserted: 1, unchanged: 0, historical: 0 }) };
     if (url.endsWith('/api/kins/media')) return { ok: true, json: async () => ({ inserted: 1, unchanged: 0 }) };
     if (url.endsWith('/api/messages')) return { ok: true, json: async () => ({ inserted: 1, updated: 0, unchanged: 0 }) };
@@ -92,13 +96,40 @@ test('background validates token, probes batches, and warns once per outage', as
   assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/probe']);
   store.settings.enabled = true;
   requests.length = 0;
-  assert.equal((await send({ type: 'inventory', account: { accountId: 'acct' }, kins: [{ accountId: 'acct', kinId: 'kin', name: 'Alex' }] }, tab)).ok, true);
-  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/accounts', '/api/kins']);
+  assert.equal((await send({ type: 'settingsChanged' }, popup)).ok, true);
+  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/probe']);
+  requests.length = 0;
+  const account = { accountId: 'acct' };
+  const kins = Array.from({ length: 101 }, (_, i) => ({ accountId: 'acct', kinId: 'kin-' + i }));
+  const inventory = { type: 'inventory', account, kins };
+  assert.equal((await send(inventory, tab)).ok, true);
+  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/inventory', '/api/inventory']);
+  assert.deepEqual(requests.map(x => JSON.parse(x.body)), [{ account, kins: kins.slice(0, 100) }, { account, kins: kins.slice(100) }]);
+  assert.ok(requests.every(x => x.redirect === 'error' && x.credentials === 'omit'));
+  requests.length = 0;
+  failure = { path: '/api/inventory', response: { ok: true, json: async () => ({ accountId: 'different', kinCount: 100 }) } };
+  assert.equal((await send(inventory, tab)).ok, false);
+  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/inventory']);
+  failure = null;
+  requests.length = 0;
+  store.settings.token = '';
+  assert.equal((await send(inventory, tab)).ok, false);
+  store.settings.token = 'secret';
+  store.settings.endpoint = 'https://img.kindroid.ai/';
+  assert.equal((await send(inventory, tab)).ok, false);
+  assert.equal(requests.length, 0);
+  store.settings.endpoint = 'http://127.0.0.1:8765';
   requests.length = 0;
   const profile = { accountId: 'acct', kinId: 'kin', fields: { ai_backstory: { value: '', observedAt: '2024-01-01T00:00:00.000Z' } } };
   assert.equal((await send({ type: 'profile', profile }, tab)).ok, true);
   assert.equal(new URL(requests[0].url).pathname, '/api/kins/profile');
   assert.deepEqual(JSON.parse(requests[0].body), profile);
+  failure = { path: '/api/kins/profile', response: { ok: true, json: async () => ({ inserted: 0, updated: 0, unchanged: 0 }) } };
+  assert.equal((await send({ type: 'profile', profile }, tab)).ok, false);
+  failure = { path: '/api/kins/profile', response: { ok: true, json: async () => { throw new SyntaxError('sensitive-fragment'); } } };
+  assert.deepEqual(await send({ type: 'profile', profile }, tab), { ok: false, reason: 'Unexpected server response.' });
+  assert.doesNotMatch(JSON.stringify(store.status), /sensitive-fragment/);
+  failure = null;
   requests.length = 0;
   const entry = { entryId: 'journal-1', createdAt: '2024-01-01T00:00:00.000Z', description: 'Entry', keywords: ['one'], origin: 'ai', accessToken: 'do-not-send' };
   assert.equal((await send({ type: 'journal', accountId: 'acct', kinId: 'kin', entries: [entry] }, tab)).ok, true);
@@ -115,6 +146,9 @@ test('background validates token, probes batches, and warns once per outage', as
     assert.equal((await send({ type: 'mediaSnapshot', urls: [url] }, tab)).ok, false);
   }
   assert.equal(snapshots, 0);
+  assert.equal((await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.png'] }, tab)).ok, false);
+  assert.equal(snapshots, 0);
+  store.settings.imageArchiving = true;
   const captured = await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.png'] }, tab);
   assert.deepEqual(captured, { ok: true, images: [{ url: 'https://img.kindroid.ai/a.png', mime: 'image/png', data: 'QUJD' }] });
   assert.equal(snapshots, 1);
@@ -131,6 +165,9 @@ test('background validates token, probes batches, and warns once per outage', as
   store.settings.imageArchiving = true;
   assert.equal((await send({ type: 'mediaSave', accountId: 'acct', kinId: 'kin', items: [{ sourceId: 's', kind: 'selfie', variant: 'preview', mime: 'image/png', data: 'QUJD' }] }, tab)).ok, true);
   assert.equal(new URL(requests.at(-1).url).pathname, '/api/kins/media');
+  failure = { path: '/api/kins/media', response: { ok: true, json: async () => ({ inserted: -1, unchanged: 2 }) } };
+  assert.equal((await send({ type: 'mediaSave', accountId: 'acct', kinId: 'kin', items: [{ sourceId: 's', kind: 'selfie', variant: 'preview', mime: 'image/png', data: 'QUJD' }] }, tab)).ok, false);
+  failure = null;
   const messages = [{ conversationId: 'c', fingerprint: 'a', content: 'one' }, { conversationId: 'c', fingerprint: 'b', content: 'two' }];
   assert.equal((await send({ type: 'captureBatch', accountId: 'acct', kinId: 'kin', messages }, tab)).ok, true);
   assert.deepEqual(JSON.parse(requests.at(-1).body), { accountId: 'acct', kinId: 'kin', messages: [messages[1]] });
@@ -156,7 +193,7 @@ test('background validates token, probes batches, and warns once per outage', as
 });
 
 test('Firefox promise APIs accept verified content senders and report unsupported media', async () => {
-  const store = { settings: { enabled: true, endpoint: 'http://127.0.0.1:8765', token: 'secret' } };
+  const store = { settings: { enabled: true, imageArchiving: true, endpoint: 'http://127.0.0.1:8765', token: 'secret' } };
   const requests = [];
   let listener;
   globalThis.chrome = {};
@@ -168,7 +205,12 @@ test('Firefox promise APIs accept verified content senders and report unsupporte
     runtime: { id: 'extension-id', getURL: path => `moz-extension://extension-id/${path}`,
       onMessage: { addListener(fn) { listener = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} } },
   };
-  globalThis.fetch = async url => { requests.push(url); return { ok: true, json: async () => ({ ok: true }) }; };
+  globalThis.fetch = async (url, options) => {
+    requests.push(url);
+    if (url.endsWith('/api/inventory')) return { ok: false, status: 404 };
+    const record = JSON.parse(options.body);
+    return { ok: true, json: async () => url.endsWith('/api/accounts') ? { account: record } : { kin: record } };
+  };
   try {
     await import('../background.js?firefox');
     const send = (message, sender) => new Promise(resolve => { assert.equal(listener(message, sender, resolve), true); });
@@ -177,9 +219,16 @@ test('Firefox promise APIs accept verified content senders and report unsupporte
     assert.deepEqual(await send({ type: 'capabilities' }, popup), { imageCapture: false });
     assert.deepEqual(await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.webp'] }, tab), { ok: false, reason: 'unsupported' });
     assert.equal((await send({ type: 'inventory', account: { accountId: 'acct' }, kins: [{ accountId: 'acct', kinId: 'kin' }] }, tab)).ok, true);
-    assert.deepEqual(requests.map(url => new URL(url).pathname), ['/api/accounts', '/api/kins']);
+    assert.deepEqual(requests.map(url => new URL(url).pathname), ['/api/inventory', '/api/accounts', '/api/kins']);
+    requests.length = 0;
+    assert.equal((await send({ type: 'inventory', account: { accountId: 'acct' }, kins: [] }, tab)).ok, true);
+    assert.deepEqual(requests.map(url => new URL(url).pathname), ['/api/accounts']);
+    assert.equal(listener({ type: 'checkConnection' }, tab, () => {}), false);
+    assert.equal(listener({ type: 'captureBatch' }, popup, () => {}), false);
     assert.equal(listener({ type: 'inventory' }, { ...tab, url: 'https://other.example/' }, () => {}), false);
     assert.equal(listener({ type: 'inventory' }, { ...tab, frameId: 2 }, () => {}), false);
     assert.equal(listener({ type: 'inventory' }, { ...tab, tab: { ...tab.tab, url: 'https://other.example/' } }, () => {}), false);
+    globalThis.browser.storage.local.get = async () => { throw new Error('private storage details'); };
+    assert.deepEqual(await send({ type: 'settingsChanged' }, popup), { ok: false, reason: 'Extension request failed.' });
   } finally { delete globalThis.browser; delete globalThis.chrome; }
 });

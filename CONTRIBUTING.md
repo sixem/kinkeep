@@ -1,33 +1,29 @@
-# Contributing to KinExport
+# Contributing to KinKeep
 
-Preserve existing archives and the passive capture model: observe data already available in the browser without directly fetching Kindroid data or automating interactions.
+## Development
 
-## Development setup
-
-Use Node.js 24 or newer and ImageMagick 7 with WebP support (`magick`). From the project root:
+Install Node.js 24+ and ImageMagick 7 with WebP support (`magick`). From the project root, install the server dependencies and run the checks.
 
 ```sh
 npm ci --prefix server --ignore-scripts
 npm run check
 ```
 
-Load `extension/` as an unpacked Chrome or Brave extension. For Firefox, run `npm run build:firefox` and load `dist/firefox/manifest.json` through `about:debugging`. Rebuild and reload the Firefox package after changes; refresh the Kindroid tab to reload content scripts.
+| Directory | Contents |
+| --- | --- |
+| `extension/` | Browser capture, background worker, popup, and extension tests |
+| `server/` | SQLite storage, HTTP API, archive transfers, and server tests |
+| `server/public/` | Dashboard |
+| `scripts/` | Builds, project checks, and setup tests |
 
-The Firefox build uses an explicit runtime asset list in `scripts/build-firefox.mjs`. Add new imports and popup assets there.
+Use the [browser installation instructions](README.md#connect-the-extension) to test UI changes. Rebuild the Firefox package after changing the extension. Reload the extension and refresh the Kindroid tab to pick up updated content scripts.
 
-With Docker and Compose v2, `./scripts/smoke-docker.sh` runs an isolated test using synthetic data. On Windows, `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test\setup-windows.ps1` tests the PowerShell setup script without contacting Docker.
+## Changes and tests
 
-## Project layout
+- Keep capture passive. Skip records whose account, Kin, or required timestamp cannot be verified.
+- Test storage changes against existing archive formats. Verify both ZIP merge and SQLite restore with disposable databases.
+- Use synthetic data in tests, reports, and screenshots. Keep tokens and personal archive contents private.
 
-- `extension/`: browser extension and capture tests.
-- `server/`: API, SQLite archive, dashboard and portable archives.
-- `scripts/`: project checks and build scripts.
-- `docker-compose.yml`, `setup.sh`, `setup.ps1`: container configuration and setup.
+With Docker available, run `./scripts/smoke-docker.sh` for an isolated container test. On Windows, `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test\setup-windows.ps1` checks the PowerShell setup flow with a mock Docker command.
 
-## Making changes
-
-- Use synthetic data; keep tokens, conversations, images and databases out of logs, screenshots and bug reports.
-- Preserve account and Kin identity, existing records, and import and backup behavior. Test migrations and restores when changing storage or archive formats.
-- Skip ambiguous source data rather than guessing timestamps or identity.
-- Run `npm run check` and exercise user-facing changes in a browser.
-- Keep version labels in sync. See the [release guide](docs/RELEASING.md).
+See [release preparation](docs/RELEASING.md) for versioning and packaging.

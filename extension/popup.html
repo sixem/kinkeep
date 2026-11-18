@@ -3,20 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width">
-  <title>KinExport</title>
+  <title>KinKeep</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header class="header">
-    <div class="brand"><img src="icons/icon48.png" width="32" height="32" alt=""><div><h1>KinExport</h1><span class="eyebrow">Realtime archive</span></div></div>
+    <div class="brand"><img src="icons/icon48.png" width="32" height="32" alt=""><div><h1>KinKeep</h1><span class="eyebrow">Realtime archive</span></div></div>
     <span id="indicator" class="badge paused" role="status">Paused</span>
   </header>
   <main>
-    <label class="toggle-row" for="enabled"><span>Archiving</span><span class="switch"><input id="enabled" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
-    <label class="toggle-row" for="image-archiving"><span>Image archiving</span><span class="switch"><input id="image-archiving" type="checkbox" role="switch" disabled><span class="switch-track" aria-hidden="true"></span></span></label>
-    <p id="status" class="notice" role="status"></p>
-    <p id="capture-status" class="notice" role="status"></p>
-    <p id="media-status" class="notice" role="status"></p>
+    <div class="capture-controls">
+      <label class="toggle-row" for="enabled"><span>Archiving</span><span class="switch"><input id="enabled" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"></span></span></label>
+      <div class="toggle-row image-row">
+        <label for="image-archiving">Image archiving</label>
+        <span class="image-help">
+          <button type="button" aria-label="About image archiving" aria-describedby="media-status">?</button>
+          <span id="media-status" role="tooltip">Checking image capture availability.</span>
+        </span>
+        <span class="switch"><input id="image-archiving" aria-describedby="media-status" type="checkbox" role="switch" disabled><span class="switch-track" aria-hidden="true"></span></span>
+      </div>
+      <p id="status" class="notice" role="status"></p>
+      <p id="capture-status" class="notice" role="status"></p>
+    </div>
     <form id="settings-form">
       <label for="endpoint">Archive server URL</label>
       <input id="endpoint" type="url" placeholder="http://127.0.0.1:8765" required>
