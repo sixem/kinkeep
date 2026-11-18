@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createArchive } from './archive.js';
 import { streamPortable, streamBackup, importPortable, restoreBackup } from './portable.js';
-import { MAX_BODY, error, object, onlyKeys, parseBatch, requiredString, scopeFrom } from './validation.js';
+import { MAX_BODY, error, object, onlyKeys, requiredString, scopeFrom } from './validation.js';
 
 export { createArchive };
 
@@ -107,16 +107,17 @@ export function createHttpServer({ archive, token, allowedHosts = ['127.0.0.1', 
       if (req.method === 'GET' && url.pathname === '/api/health') return sendJson(res, 200, { status: 'ok' });
       if (!url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'Not found' });
       if (req.method === 'GET' && ['/api/download/portable','/api/download/sqlite'].includes(url.pathname)) {
-        const value = (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith('kinexport_download='))?.slice('kinexport_download='.length);
+        const value = (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith('kinkeep_download='))?.slice('kinkeep_download='.length);
         const ticket = value ? tickets.get(value) : null;
         if (value) tickets.delete(value);
         const format = url.pathname.endsWith('/portable') ? 'portable' : 'sqlite';
         const validTicket = ticket && ticket.expires >= Date.now() && ticket.format === format ? ticket : null;
         if (!validToken(req.headers.authorization, token) && !validTicket) return sendJson(res, 401, { error:'Unauthorized' });
-        res.setHeader('Set-Cookie','kinexport_download=; Path=/api/download; Max-Age=0; HttpOnly; SameSite=Strict');
+        res.setHeader('Set-Cookie','kinkeep_download=; Path=/api/download; Max-Age=0; HttpOnly; SameSite=Strict');
         return await transfer(() => format === 'portable' ? streamPortable(archive,res,validTicket?.timestamp) : streamBackup(archive,res,validTicket?.timestamp));
       }
       if (!validToken(req.headers.authorization, token)) return sendJson(res, 401, { error: 'Unauthorized' });
+      if (req.method === 'GET' && url.pathname === '/api/session') return sendJson(res, 200, { authenticated: true });
       const contentType = req.headers['content-type']?.split(';')[0].trim();
       if (req.method === 'POST' && url.pathname === '/api/import/portable') {
         if (contentType !== 'application/zip') throw error(415, 'Expected application/zip');
@@ -135,11 +136,9 @@ export function createHttpServer({ archive, token, allowedHosts = ['127.0.0.1', 
         const now=Date.now(); for (const [key,ticket] of tickets) if (ticket.expires < now) tickets.delete(key);
         if (tickets.size >= 20) throw error(429,'Too many pending downloads.');
         const value=randomBytes(32).toString('base64url'); tickets.set(value,{format:body.format,timestamp,expires:now+120_000});
-        return sendJson(res,200,{ok:true},{'Set-Cookie':`kinexport_download=${value}; Path=/api/download; Max-Age=120; HttpOnly; SameSite=Strict`});
+        return sendJson(res,200,{ok:true},{'Set-Cookie':`kinkeep_download=${value}; Path=/api/download; Max-Age=120; HttpOnly; SameSite=Strict`});
       }
       if (req.method === 'POST' && url.pathname === '/api/inventory') return sendJson(res, 200, archive.upsertInventory(await readJson(req)));
-      if (req.method === 'POST' && url.pathname === '/api/accounts') return sendJson(res, 200, { account: archive.upsertAccount(await readJson(req)) });
-      if (req.method === 'POST' && url.pathname === '/api/kins') return sendJson(res, 200, { kin: archive.upsertKin(await readJson(req)) });
       if (req.method === 'POST' && url.pathname === '/api/kins/profile') return sendJson(res, 200, archive.upsertProfile(await readJson(req)));
       if (req.method === 'POST' && url.pathname === '/api/kins/media') {
         const body = await readJson(req); object(body, 'media batch'); onlyKeys(body, ['accountId', 'kinId', 'items'], 'media batch');
@@ -170,22 +169,21 @@ export function createHttpServer({ archive, token, allowedHosts = ['127.0.0.1', 
       if (req.method === 'GET' && url.pathname === '/api/accounts') return sendJson(res, 200, { accounts: archive.accounts() });
       if (req.method === 'GET' && url.pathname === '/api/kins') return sendJson(res, 200, { kins: archive.kins(requiredString(url.searchParams.get('accountId'), 'accountId')) });
       if (req.method === 'POST' && (url.pathname === '/api/probe' || url.pathname === '/api/messages')) {
-        const body = await readJson(req); const probe = url.pathname === '/api/probe'; const scope = scopeFrom(body, { allowLegacy: true });
-        if (!scope) return sendJson(res, 200, probe ? archive.probe(parseBatch(body, true)) : archive.ingest(parseBatch(body)));
+        const body = await readJson(req); const probe = url.pathname === '/api/probe'; const scope = scopeFrom(body);
         return sendJson(res, 200, probe ? archive.scopedProbe(scope, body.messages) : archive.scopedIngest(scope, body.messages));
       }
       if (req.method === 'GET' && url.pathname === '/api/digest') return sendJson(res, 200, archive.digest());
       if (req.method === 'GET' && url.pathname === '/api/conversations') {
-        const scope = scopeFrom(Object.fromEntries(url.searchParams), { allowLegacy: true });
-        return sendJson(res, 200, { conversations: scope ? archive.scopedConversations(scope) : archive.conversations() });
+        const scope = scopeFrom(Object.fromEntries(url.searchParams));
+        return sendJson(res, 200, { conversations: archive.scopedConversations(scope) });
       }
       if (req.method === 'GET' && url.pathname === '/api/search') return sendJson(res, 200, { messages: archive.search(requiredString(url.searchParams.get('q'), 'search query', 500)) });
       if (req.method === 'GET' && url.pathname === '/api/messages') {
-        const scope = scopeFrom(Object.fromEntries(url.searchParams), { allowLegacy: true });
+        const scope = scopeFrom(Object.fromEntries(url.searchParams));
         const conversationId = url.searchParams.get('conversationId');
         const page = parseMessagePage(url.searchParams);
         if (page) return sendJson(res, 200, archive.archiveMessagePage(scope, conversationId, page));
-        return sendJson(res, 200, { messages: scope ? archive.scopedArchiveMessages(scope, conversationId) : archive.archiveMessages(conversationId) });
+        return sendJson(res, 200, { messages: archive.scopedArchiveMessages(scope, conversationId) });
       }
       return sendJson(res, 404, { error: 'Not found' });
     } catch (e) {
@@ -200,11 +198,11 @@ export function createHttpServer({ archive, token, allowedHosts = ['127.0.0.1', 
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const token = process.env.KINEXPORT_TOKEN;
-  if (!token || token.length < 32) throw new Error('KINEXPORT_TOKEN must be at least 32 characters');
+  const token = process.env.KINKEEP_TOKEN;
+  if (!token || token.length < 32) throw new Error('KINKEEP_TOKEN must be at least 32 characters');
   const host = process.env.HOST || '127.0.0.1';
   const port = Number(process.env.PORT || 8765);
-  const archive = createArchive({ databasePath: process.env.DATABASE_PATH || './data/kinexport.sqlite', token });
+  const archive = createArchive({ databasePath: process.env.DATABASE_PATH || './data/kinkeep.sqlite', token });
   const allowedHosts = (process.env.ALLOWED_HOSTS || '127.0.0.1,localhost,::1').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
   createHttpServer({ archive, token, allowedHosts }).listen(port, host, () => console.log(`KinKeep archive listening on ${host}:${port}`));
 }

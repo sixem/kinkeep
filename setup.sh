@@ -45,7 +45,7 @@ check_project_ownership() {
   local ids id managed
   ids=$(docker ps -aq --filter "label=com.docker.compose.project=$project_name")
   for id in $ids; do
-    managed=$(docker inspect --format '{{ index .Config.Labels "io.kinexport.managed" }}' "$id")
+    managed=$(docker inspect --format '{{ index .Config.Labels "io.kinkeep.managed" }}' "$id")
     if [[ "$managed" != true ]]; then
       printf '%s\n' "A container in Compose project '$project_name' is not marked as KinKeep-managed. Refusing to change it." >&2
       exit 1
@@ -62,21 +62,21 @@ ensure_env() {
     local token
     token=$(openssl rand -hex 32)
     # noclobber ensures an existing configuration is never overwritten, even in a race.
-    if ! (umask 077; set -o noclobber; printf 'KINEXPORT_TOKEN=%s\n' "$token" > "$env_file") 2>/dev/null; then
+    if ! (umask 077; set -o noclobber; printf 'KINKEEP_TOKEN=%s\n' "$token" > "$env_file") 2>/dev/null; then
       printf '%s\n' "Could not create $env_file; check its permissions or use the existing file." >&2
       exit 1
     fi
     printf 'Created archive credentials in %s\n' "$env_file"
   fi
-  if ! grep -Eq '^KINEXPORT_TOKEN=.+$' "$env_file"; then
-    printf '%s\n' "Set a nonempty KINEXPORT_TOKEN in $env_file before continuing." >&2
+  if ! grep -Eq '^KINKEEP_TOKEN=.+$' "$env_file"; then
+    printf '%s\n' "Set a nonempty KINKEEP_TOKEN in $env_file before continuing." >&2
     exit 1
   fi
 }
 
 compose() {
   # Compose otherwise gives an inherited shell variable precedence over .env.
-  (unset KINEXPORT_TOKEN; docker compose --project-name "$project_name" --env-file "$env_file" -f "$project_dir/docker-compose.yml" "$@")
+  (unset KINKEEP_TOKEN; docker compose --project-name "$project_name" --env-file "$env_file" -f "$project_dir/docker-compose.yml" "$@")
 }
 
 show_status() {
@@ -114,7 +114,7 @@ run_action() {
   esac
   if [[ "$action" != logs && "$action" != stop ]]; then
     printf '\nArchive: http://127.0.0.1:8765\nCredentials: %s\n' "$env_file"
-    printf '%s\n' 'Copy the KINEXPORT_TOKEN value into the extension settings. Keep it private.'
+    printf '%s\n' 'Copy the KINKEEP_TOKEN value into the extension settings. Keep it private.'
   fi
 }
 

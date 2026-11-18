@@ -9,25 +9,6 @@ export function requiredString(value, name, max = 2048) {
 export function optionalString(value, name, max = 2048) {
   return value == null ? null : requiredString(value, name, max);
 }
-export function validateMessage(raw, probe = false) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw error(400, 'Invalid message');
-  const base = {
-    conversationId: requiredString(raw.conversationId, 'conversationId'),
-    messageId: optionalString(raw.messageId, 'messageId'),
-    fingerprint: requiredString(raw.fingerprint, 'fingerprint'),
-  };
-  if (probe) return base;
-  if (typeof raw.content !== 'string' || raw.content.length > 1_000_000) throw error(400, 'Invalid content');
-  return { ...base, kinId: optionalString(raw.kinId, 'kinId'), kinName: optionalString(raw.kinName, 'kinName'), sender: optionalString(raw.sender, 'sender'), timestamp: optionalString(raw.timestamp, 'timestamp'), content: raw.content,
-    firstSeen: optionalString(raw.firstSeen, 'firstSeen'), lastSeen: optionalString(raw.lastSeen, 'lastSeen') };
-}
-export function parseBatch(body, probe = false) {
-  if (!body || !Array.isArray(body.messages) || body.messages.length > MAX_BATCH) throw error(400, `Expected up to ${MAX_BATCH} messages`);
-  return body.messages.map((message) => {
-    if (message?.accountId != null) throw error(400, 'Scoped messages require accountId and kinId on the batch');
-    return validateMessage(message, probe);
-  });
-}
 export function object(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw error(400, `Invalid ${name}`);
   return value;
@@ -46,12 +27,13 @@ export function kinInput(raw) {
   onlyKeys(raw, ['accountId', 'kinId', 'name', 'sourceTimestamp', 'firstSeen', 'lastSeen'], 'Kin');
   return { accountId: requiredString(raw.accountId, 'accountId'), kinId: requiredString(raw.kinId, 'kinId'), name: optionalString(raw.name, 'name'), sourceTimestamp: optionalString(raw.sourceTimestamp, 'sourceTimestamp'), firstSeen: optionalString(raw.firstSeen, 'firstSeen'), lastSeen: optionalString(raw.lastSeen, 'lastSeen') };
 }
-export function conversationInput(raw, scoped = false) {
+export function conversationInput(raw) {
   object(raw, 'conversation');
-  onlyKeys(raw, scoped ? ['accountId', 'kinId', 'id', 'firstSeen', 'lastSeen', 'messageCount'] : ['id', 'kinId', 'kinName', 'firstSeen', 'lastSeen', 'messageCount'], 'conversation');
-  const value = { id: requiredString(raw.id, 'conversation id'), firstSeen: requiredString(raw.firstSeen, 'conversation firstSeen'), lastSeen: requiredString(raw.lastSeen, 'conversation lastSeen') };
-  if (scoped) return { ...scopeFrom(raw), ...value };
-  return { ...value, kinId: optionalString(raw.kinId, 'conversation kinId'), kinName: optionalString(raw.kinName, 'conversation kinName') };
+  onlyKeys(raw, ['accountId', 'kinId', 'id', 'firstSeen', 'lastSeen'], 'conversation');
+  return {
+    ...scopeFrom(raw), id: requiredString(raw.id, 'conversation id'),
+    firstSeen: requiredString(raw.firstSeen, 'conversation firstSeen'), lastSeen: requiredString(raw.lastSeen, 'conversation lastSeen'),
+  };
 }
 export function messageData(value) {
   if (value == null) return null;
@@ -70,48 +52,42 @@ export function messageData(value) {
     data.captureSource = value.captureSource;
   }
   if (value.reactions != null) {
-    if (!Array.isArray(value.reactions)) {
-      object(value.reactions, 'reactions');
-      const entries = Object.entries(value.reactions);
-      if (entries.length > 1000) throw error(400, 'Invalid reactions');
-      data.reactions = Object.create(null);
-      for (const [actor, emoji] of entries) {
-        requiredString(actor, 'reaction actor', 2048);
-        if (/token|password|cookie|authorization|secret/i.test(actor)) throw error(400, 'Invalid reaction actor');
-        data.reactions[actor] = requiredString(emoji, 'reaction emoji', 128);
-      }
-    } else {
-      if (value.reactions.length > 1000) throw error(400, 'Invalid reactions');
-      data.reactions = value.reactions.map((reaction) => {
-        if (typeof reaction === 'string') return requiredString(reaction, 'reaction', 2048);
-        object(reaction, 'reaction'); onlyKeys(reaction, ['name', 'emoji', 'count'], 'reaction');
-        const out = {};
-        if (reaction.name != null) out.name = requiredString(reaction.name, 'reaction name');
-        if (reaction.emoji != null) out.emoji = requiredString(reaction.emoji, 'reaction emoji');
-        if (reaction.count != null) {
-          if (!Number.isSafeInteger(reaction.count) || reaction.count < 0) throw error(400, 'Invalid reaction count');
-          out.count = reaction.count;
-        }
-        return out;
-      });
+    object(value.reactions, 'reactions');
+    const entries = Object.entries(value.reactions);
+    if (entries.length > 1000) throw error(400, 'Invalid reactions');
+    data.reactions = Object.create(null);
+    for (const [actor, emoji] of entries) {
+      requiredString(actor, 'reaction actor', 2048);
+      if (/token|password|cookie|authorization|secret/i.test(actor)) throw error(400, 'Invalid reaction actor');
+      data.reactions[actor] = requiredString(emoji, 'reaction emoji', 128);
     }
   }
   return data;
 }
-export function scopedMessage(raw, probe = false, importing = false) {
+export function scopedMessage(raw, probe = false) {
   object(raw, 'message');
-  onlyKeys(raw, ['accountId', 'kinId', 'conversationId', 'messageId', 'fingerprint', ...(probe ? ['captureSource'] : ['sender', 'timestamp', 'content', 'data', 'firstSeen', 'lastSeen', ...(importing ? ['revisions'] : [])])], 'message');
-  const { kinId: _kinId, kinName: _kinName, ...m } = validateMessage(raw, probe);
-  if (probe && raw.captureSource != null) {
-    if (!['dom', 'history', 'cache'].includes(raw.captureSource)) throw error(400, 'Invalid captureSource');
-    m.captureSource = raw.captureSource;
+  onlyKeys(raw, ['accountId', 'kinId', 'conversationId', 'messageId', 'fingerprint', ...(probe ? ['captureSource'] : ['sender', 'timestamp', 'content', 'data', 'firstSeen', 'lastSeen'])], 'message');
+  const message = {
+    conversationId: requiredString(raw.conversationId, 'conversationId'),
+    messageId: optionalString(raw.messageId, 'messageId'),
+    fingerprint: requiredString(raw.fingerprint, 'fingerprint'),
+  };
+  if (probe) {
+    if (raw.captureSource != null) {
+      if (!['dom', 'history', 'cache'].includes(raw.captureSource)) throw error(400, 'Invalid captureSource');
+      message.captureSource = raw.captureSource;
+    }
+    return message;
   }
-  if (!probe) m.data = messageData(raw.data);
-  return m;
+  if (typeof raw.content !== 'string' || raw.content.length > 1_000_000) throw error(400, 'Invalid content');
+  return {
+    ...message, sender: optionalString(raw.sender, 'sender'), timestamp: optionalString(raw.timestamp, 'timestamp'),
+    content: raw.content, firstSeen: optionalString(raw.firstSeen, 'firstSeen'), lastSeen: optionalString(raw.lastSeen, 'lastSeen'),
+    data: messageData(raw.data),
+  };
 }
-export function scopeFrom(body, { allowLegacy = false } = {}) {
+export function scopeFrom(body) {
   object(body, 'scope');
-  if (!Object.hasOwn(body, 'accountId') && !Object.hasOwn(body, 'kinId') && allowLegacy) return null;
   return { accountId: requiredString(body.accountId, 'accountId'), kinId: requiredString(body.kinId, 'kinId') };
 }
 const PROFILE_FIELDS = Object.freeze({
@@ -141,7 +117,7 @@ function profileDate(value, field, { optional = false } = {}) {
 }
 export function journalValue(raw, { importing = false, revision = false } = {}) {
   object(raw, 'journal entry');
-  onlyKeys(raw, ['createdAt', 'description', 'keywords', 'origin', ...(revision ? ['recordedAt'] : ['entryId', ...(importing ? ['accountId', 'kinId', 'firstSeen', 'lastSeen', 'revisions'] : [])])], 'journal entry');
+  onlyKeys(raw, ['createdAt', 'description', 'keywords', 'origin', ...(revision ? ['recordedAt'] : ['entryId', ...(importing ? ['accountId', 'kinId', 'firstSeen', 'lastSeen'] : [])])], 'journal entry');
   const createdAt = profileDate(raw.createdAt, 'journal createdAt');
   const description = requiredString(raw.description, 'journal description', 1_000_000);
   let keywords = null;
@@ -157,8 +133,6 @@ export function journalValue(raw, { importing = false, revision = false } = {}) 
     entry.firstSeen = profileDate(raw.firstSeen, 'journal firstSeen');
     entry.lastSeen = profileDate(raw.lastSeen, 'journal lastSeen');
     if (entry.firstSeen > entry.lastSeen) throw error(400, 'Invalid journal observation range');
-    if (!Array.isArray(raw.revisions) || raw.revisions.length > 10000) throw error(400, 'Invalid journal revisions');
-    entry.revisions = raw.revisions.map(item => journalValue(item, { revision: true }));
   }
   return entry;
 }
@@ -169,19 +143,13 @@ export function profileFieldsInput(raw, { importing = false } = {}) {
   if (fields.length > Object.keys(PROFILE_FIELDS).length) throw error(400, 'Too many profile fields');
   return fields.map(([field, input]) => {
     object(input, `profile ${field}`);
-    onlyKeys(input, importing ? ['value', 'observedAt', 'recordedAt', 'eventId', 'history'] : ['value', 'observedAt'], `profile ${field}`);
+    onlyKeys(input, importing ? ['value', 'observedAt', 'recordedAt', 'eventId'] : ['value', 'observedAt'], `profile ${field}`);
     if (!Object.hasOwn(input, 'value')) throw error(400, `Missing value for ${field}`);
     const value = profileValue(field, input.value);
     const observedAt = profileDate(input.observedAt, 'observedAt', { optional: true });
     const recordedAt = importing ? profileDate(input.recordedAt, 'recordedAt') : null;
     const eventId = importing ? requiredString(input.eventId, 'profile eventId', 128) : null;
-    if (importing && input.history != null && (!Array.isArray(input.history) || input.history.length > 10000)) throw error(400, 'Invalid profile history');
-    const history = !importing ? [] : (input.history || []).map((entry) => {
-      object(entry, 'profile history'); onlyKeys(entry, ['value', 'observedAt', 'recordedAt', 'eventId'], 'profile history');
-      if (!Object.hasOwn(entry, 'value')) throw error(400, 'Missing profile history value');
-      return { value: profileValue(field, entry.value), observedAt: profileDate(entry.observedAt, 'observedAt', { optional: true }), recordedAt: profileDate(entry.recordedAt, 'recordedAt'), eventId: requiredString(entry.eventId, 'profile history eventId', 128) };
-    });
-    return { field, value, observedAt, recordedAt, eventId, history };
+    return { field, value, observedAt, recordedAt, eventId };
   });
 }
 export function scopedBatch(scope, messages, probe = false) {

@@ -48,7 +48,7 @@ async function replaceableOutput(output) {
   const manifestPath = join(output, 'manifest.json');
   if (!entries.some(entry => entry.isFile() && join(entry.parentPath, entry.name) === manifestPath)) throw invalidOutput;
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  if (!['KinKeep', 'KinExport'].includes(manifest.name)) throw invalidOutput;
+  if (manifest.name !== 'KinKeep') throw invalidOutput;
   const files = runtimeFiles(manifest);
   files.add('manifest.json');
   for (const entry of entries) {

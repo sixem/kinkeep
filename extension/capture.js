@@ -96,12 +96,12 @@
       }
       function receive(event) {
         const data = event.data;
-        if (event.source !== window || event.origin !== location.origin || data?.type !== 'KINEXPORT_HISTORY_RESPONSE' || data.nonce !== nonce || data.uid !== uid || data.kinId !== kinId || !Array.isArray(data.records) || data.records.length > ids.length) return;
+        if (event.source !== window || event.origin !== location.origin || data?.type !== 'KINKEEP_HISTORY_RESPONSE' || data.nonce !== nonce || data.uid !== uid || data.kinId !== kinId || !Array.isArray(data.records) || data.records.length > ids.length) return;
         finish(data.records.filter(record => record && requested.has(record.id)));
       }
       window.addEventListener('message', receive);
       timer = setTimeout(() => finish([]), 1500);
-      window.postMessage({ type: 'KINEXPORT_HISTORY_REQUEST', nonce, uid, kinId, ids }, location.origin);
+      window.postMessage({ type: 'KINKEEP_HISTORY_REQUEST', nonce, uid, kinId, ids }, location.origin);
     });
   }
   async function scan() {

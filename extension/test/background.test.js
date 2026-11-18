@@ -39,6 +39,7 @@ test('background validates token, probes batches, and warns once per outage', as
     if (!available) throw new Error('unreachable');
     if (url.endsWith('/api/health')) { if (changeDuringHealth) changeDuringHealth(); return { ok: true, json: async () => ({ status: 'ok' }) }; }
     assert.equal(options.headers.Authorization, 'Bearer secret');
+    if (url.endsWith('/api/session')) return { ok: true, json: async () => ({ authenticated: true }) };
     if (url.endsWith('/api/probe')) {
       const { messages } = JSON.parse(options.body);
       if (pauseDuringProbe) store.settings.enabled = false;
@@ -59,16 +60,16 @@ test('background validates token, probes batches, and warns once per outage', as
   const popup = { id: 'extension-id', url: 'chrome-extension://extension-id/popup.html' };
   const tab = { id: 'extension-id', tab: { id: 12, url: 'https://kindroid.ai/chat' } };
   assert.deepEqual(await send({ type: 'checkConnection' }, popup), { ok: true });
-  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/probe']);
+  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/session']);
   for (const [scenario, expected] of [
     [{ path: '/api/health', error: new TypeError('network private-token') }, 'Health check: Connection failed.'],
-    [{ path: '/api/probe', error: new TypeError('network private-token') }, 'Authenticated probe: Connection failed.'],
+    [{ path: '/api/session', error: new TypeError('network private-token') }, 'Authenticated check: Connection failed.'],
     [{ path: '/api/health', error: Object.assign(new Error('private-token'), { name: 'TimeoutError' }) }, 'Health check: Connection timed out.'],
-    [{ path: '/api/probe', response: { ok: false, status: 401 } }, 'Authenticated probe: Archive returned HTTP 401.'],
+    [{ path: '/api/session', response: { ok: false, status: 401 } }, 'Authenticated check: Archive returned HTTP 401.'],
     [{ path: '/api/health', response: { ok: false, status: 503 } }, 'Health check: Archive returned HTTP 503.'],
-    [{ path: '/api/probe', response: { ok: true, json: async () => { throw new SyntaxError('private-token'); } } }, 'Authenticated probe: Unexpected server response.'],
+    [{ path: '/api/session', response: { ok: true, json: async () => { throw new SyntaxError('private-token'); } } }, 'Authenticated check: Unexpected server response.'],
     [{ path: '/api/health', response: { ok: true, json: async () => ({ wrong: true }) } }, 'Health check: Unexpected server response.'],
-    [{ path: '/api/probe', response: { ok: true, json: async () => ({ results: 'private-token' }) } }, 'Authenticated probe: Unexpected server response.'],
+    [{ path: '/api/session', response: { ok: true, json: async () => ({ results: 'private-token' }) } }, 'Authenticated check: Unexpected server response.'],
   ]) {
     failure = scenario;
     const result = await send({ type: 'checkConnection' }, popup);
@@ -93,11 +94,11 @@ test('background validates token, probes batches, and warns once per outage', as
   requests.length = 0;
   store.settings.enabled = false;
   assert.deepEqual(await send({ type: 'checkConnection' }, popup), { ok: true });
-  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/probe']);
+  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/health', '/api/session']);
   store.settings.enabled = true;
   requests.length = 0;
   assert.equal((await send({ type: 'settingsChanged' }, popup)).ok, true);
-  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/probe']);
+  assert.deepEqual(requests.map(x => new URL(x.url).pathname), ['/api/session']);
   requests.length = 0;
   const account = { accountId: 'acct' };
   const kins = Array.from({ length: 101 }, (_, i) => ({ accountId: 'acct', kinId: 'kin-' + i }));
@@ -190,45 +191,4 @@ test('background validates token, probes batches, and warns once per outage', as
   assert.equal(store.status.state, 'online');
   assert.ok(requests.every(request => request.url.startsWith('http://127.0.0.1:8765/')));
   delete globalThis.chrome;
-});
-
-test('Firefox promise APIs accept verified content senders and report unsupported media', async () => {
-  const store = { settings: { enabled: true, imageArchiving: true, endpoint: 'http://127.0.0.1:8765', token: 'secret' } };
-  const requests = [];
-  let listener;
-  globalThis.chrome = {};
-  globalThis.browser = {
-    storage: { local: { get: async key => ({ [key]: structuredClone(store[key]) }), set: async values => Object.assign(store, structuredClone(values)) } },
-    action: { setBadgeText: async () => {}, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
-    alarms: { create: async () => {}, clear: async () => {}, onAlarm: { addListener() {} } },
-    notifications: { create: async () => {} }, permissions: { contains: async () => true },
-    runtime: { id: 'extension-id', getURL: path => `moz-extension://extension-id/${path}`,
-      onMessage: { addListener(fn) { listener = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} } },
-  };
-  globalThis.fetch = async (url, options) => {
-    requests.push(url);
-    if (url.endsWith('/api/inventory')) return { ok: false, status: 404 };
-    const record = JSON.parse(options.body);
-    return { ok: true, json: async () => url.endsWith('/api/accounts') ? { account: record } : { kin: record } };
-  };
-  try {
-    await import('../background.js?firefox');
-    const send = (message, sender) => new Promise(resolve => { assert.equal(listener(message, sender, resolve), true); });
-    const popup = { id: 'extension-id', url: 'moz-extension://extension-id/popup.html' };
-    const tab = { id: 'extension-id', url: 'https://kindroid.ai/v2/chat/kin', frameId: 0, tab: { id: 12 } };
-    assert.deepEqual(await send({ type: 'capabilities' }, popup), { imageCapture: false });
-    assert.deepEqual(await send({ type: 'mediaSnapshot', urls: ['https://img.kindroid.ai/a.webp'] }, tab), { ok: false, reason: 'unsupported' });
-    assert.equal((await send({ type: 'inventory', account: { accountId: 'acct' }, kins: [{ accountId: 'acct', kinId: 'kin' }] }, tab)).ok, true);
-    assert.deepEqual(requests.map(url => new URL(url).pathname), ['/api/inventory', '/api/accounts', '/api/kins']);
-    requests.length = 0;
-    assert.equal((await send({ type: 'inventory', account: { accountId: 'acct' }, kins: [] }, tab)).ok, true);
-    assert.deepEqual(requests.map(url => new URL(url).pathname), ['/api/accounts']);
-    assert.equal(listener({ type: 'checkConnection' }, tab, () => {}), false);
-    assert.equal(listener({ type: 'captureBatch' }, popup, () => {}), false);
-    assert.equal(listener({ type: 'inventory' }, { ...tab, url: 'https://other.example/' }, () => {}), false);
-    assert.equal(listener({ type: 'inventory' }, { ...tab, frameId: 2 }, () => {}), false);
-    assert.equal(listener({ type: 'inventory' }, { ...tab, tab: { ...tab.tab, url: 'https://other.example/' } }, () => {}), false);
-    globalThis.browser.storage.local.get = async () => { throw new Error('private storage details'); };
-    assert.deepEqual(await send({ type: 'settingsChanged' }, popup), { ok: false, reason: 'Extension request failed.' });
-  } finally { delete globalThis.browser; delete globalThis.chrome; }
 });

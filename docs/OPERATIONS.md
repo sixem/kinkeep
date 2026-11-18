@@ -9,11 +9,11 @@ Run the setup script from the project directory. On Windows use `powershell.exe 
 | `stop` / `restart` | Stop or restart the service |
 | `reinstall` | Rebuild and recreate the container using its existing data volume |
 
-Keep the named volume when updating or reinstalling. The `kinkeep-local` project uses a separate volume from older `kinexport-local` installs. To bring an older archive into KinKeep, restore its SQLite backup or import its portable ZIP. When switching between Windows and WSL, use the same Docker daemon to access the same archive.
+Docker stores the archive in the `kinkeep-local_archive-data` volume, which persists across updates and reinstalls. Windows and WSL use the same archive when they connect to the same Docker daemon.
 
 ## Access token
 
-Setup creates `KINEXPORT_TOKEN` in `.env` on first start. To rotate it, replace the value with a random secret of at least 32 characters and run the setup script's `restart` command. Save the new token in the extension and unlock the dashboard with it. The extension stores the token locally. The dashboard keeps it in the tab session until you lock the archive or close the tab.
+Setup creates `KINKEEP_TOKEN` in `.env` on first start. To rotate it, replace the value with a random secret of at least 32 characters and run the setup script's `restart` command. Save the new token in the extension and unlock the dashboard with it. The extension stores the token locally. The dashboard keeps it in the tab session until you lock the archive or close the tab.
 
 ## Export and restore
 

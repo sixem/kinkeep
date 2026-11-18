@@ -12,14 +12,14 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,mode=1777
     labels:
-      io.kinexport.managed: "true"
+      io.kinkeep.managed: "true"
     ports:
       - "127.0.0.1:8765:8765"
     environment:
-      KINEXPORT_TOKEN: "${KINEXPORT_TOKEN:?Run a KinKeep setup script to create a local token}"
+      KINKEEP_TOKEN: "${KINKEEP_TOKEN:?Run a KinKeep setup script to create a local token}"
       HOST: "0.0.0.0"
       PORT: "8765"
-      DATABASE_PATH: /data/kinexport.sqlite
+      DATABASE_PATH: /data/kinkeep.sqlite
     volumes:
       - archive-data:/data
     restart: unless-stopped

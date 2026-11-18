@@ -9,11 +9,10 @@ import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
 import yazl from 'yazl';
 
-const FORMAT = 'kinexport-portable';
+import { archiveSchema, matchesArchiveSchema } from './archive.js';
+
+const FORMAT = 'kinkeep-portable';
 const VERSION = 1;
-// Version 1 is frozen. New database schemas require an explicit portable format
-// version and migration instead of silently changing the meaning of this one.
-const PORTABLE_SCHEMA_V1 = 'ce44b93bcfd978d43cc4652c2b0a690a1a5a71f9ad2b9b905b81034aa59eda07';
 const MAX_UPLOAD = 64 * 1024 ** 3;
 const MAX_EXPANDED = 128 * 1024 ** 3;
 const MAX_DATABASE = 64 * 1024 ** 3;
@@ -25,7 +24,7 @@ const failure = message => Object.assign(new Error(message), { status: 400 });
 
 async function workspace(archive) {
   const base = archive.databasePath === ':memory:' ? tmpdir() : dirname(archive.databasePath);
-  return mkdtemp(join(base, '.kinexport-'));
+  return mkdtemp(join(base, '.kinkeep-'));
 }
 async function sha256(path) {
   const hash = createHash('sha256');
@@ -38,13 +37,9 @@ function openSnapshot(path) {
   catch (error) { db.close(); throw error; }
   return db;
 }
-function schema(db) {
-  return db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name").all().map(row => [row.type,row.name,row.tbl_name,row.sql]);
-}
-function schemaDigest(db) { return createHash('sha256').update(JSON.stringify(schema(db))).digest('hex'); }
-export function validateSnapshot(source, target, { portable = false } = {}) {
+export function validateSnapshot(source) {
   try {
-    if (portable ? schemaDigest(source) !== PORTABLE_SCHEMA_V1 : JSON.stringify(schema(source)) !== JSON.stringify(schema(target))) throw failure('Unsupported SQLite archive schema.');
+    if (!matchesArchiveSchema(source)) throw failure('Unsupported SQLite archive schema.');
     const integrity = source.prepare('PRAGMA integrity_check').iterate();
     for (const row of integrity) if (Object.values(row)[0] !== 'ok') throw failure('SQLite archive failed integrity checks.');
     if (source.prepare('PRAGMA foreign_key_check').get()) throw failure('SQLite archive has invalid references.');
@@ -62,7 +57,7 @@ async function materializePortable(archive, dir) {
   const mediaDir = join(dir, 'media'); await mkdir(mediaDir);
   const media = []; let mediaBytes = 0;
   try {
-    if (schemaDigest(source) !== PORTABLE_SCHEMA_V1) throw Object.assign(new Error('This database schema cannot be exported as portable format version 1.'),{status:409});
+    if (!matchesArchiveSchema(source)) throw Object.assign(new Error('This database schema cannot be exported as portable format version 1.'),{status:409});
     const getBlob = source.prepare('SELECT bytes FROM media_blobs WHERE sha256=?');
     for (const row of source.prepare('SELECT sha256,mime FROM media_blobs ORDER BY sha256').iterate()) {
       const ext = extensions[row.mime];
@@ -81,7 +76,7 @@ async function materializePortable(archive, dir) {
     try {
       metadata.exec('PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=OFF; PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF');
       metadata.prepare('ATTACH DATABASE ? AS snapshot_source').run(snapshotPath);
-      const objects = schema(source);
+      const objects = archiveSchema(source);
       for (const [type,,,sql] of objects) if (type === 'table') metadata.exec(sql);
       metadata.exec('BEGIN');
       try {
@@ -94,7 +89,7 @@ async function materializePortable(archive, dir) {
       } catch (error) { metadata.exec('ROLLBACK'); throw error; }
       for (const [type,,,sql] of objects) if (type === 'index' && sql) metadata.exec(sql);
       metadata.exec('DETACH DATABASE snapshot_source');
-      if (schemaDigest(metadata) !== PORTABLE_SCHEMA_V1) throw new Error('Could not construct the portable database schema.');
+      if (!matchesArchiveSchema(metadata)) throw new Error('Could not construct the portable database schema.');
     } finally { metadata.close(); }
   } finally { source.close(); }
   const databaseSize = (await stat(databasePath)).size;
@@ -122,7 +117,7 @@ export async function streamPortable(archive, response, timestamp) {
 export async function streamBackup(archive, response, timestamp) {
   const dir = await workspace(archive);
   try {
-    const path = join(dir,'kinexport.sqlite3'); await backup(archive.db,path);
+    const path = join(dir,'kinkeep.sqlite3'); await backup(archive.db,path);
     if ((await stat(path)).size > MAX_UPLOAD) throw Object.assign(new Error('Archive exceeds the SQLite backup restore limit.'),{status:413});
     response.writeHead(200, { 'Content-Type':'application/vnd.sqlite3', 'Content-Disposition':`attachment; filename="kinkeep-backup${timestamp ? `-${timestamp}` : ''}.sqlite3"`, 'Cache-Control':'no-store' });
     await pipeline(createReadStream(path),response);
@@ -188,10 +183,10 @@ export async function importPortable(archive, req) {
     const input=join(dir,'incoming.zip'); await receive(req,input);
     const {databasePath,media}=await extractPortable(input,dir);
     const metadata=openSnapshot(databasePath);
-    try { validateSnapshot(metadata,archive.db,{portable:true}); } finally { metadata.close(); }
+    try { validateSnapshot(metadata); } finally { metadata.close(); }
     await restoreMedia(databasePath,media);
     const source=openSnapshot(databasePath);
-    try { validateSnapshot(source,archive.db,{portable:true}); return archive.mergeSnapshot(source); }
+    try { validateSnapshot(source); return archive.mergeSnapshot(source); }
     finally { source.close(); }
   } catch (error) {
     if (error.status || error.code === 'ENOSPC' || error.code === 'EACCES') throw error;
@@ -204,7 +199,7 @@ export async function restoreBackup(archive, req, createArchive) {
     const input=join(dir,'incoming.sqlite3'); await receive(req,input);
     const source=openSnapshot(input);
     try {
-      validateSnapshot(source,archive.db);
+      validateSnapshot(source);
       // Validate record contents against the normal import rules before replacing anything.
       const scratch=createArchive({databasePath:join(dir,'validation.sqlite3'),token:'backup-validation'});
       try { scratch.mergeSnapshot(source); } finally { scratch.db.close(); }

@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$temporaryParent = if ($env:KINEXPORT_TEST_TMPDIR) { $env:KINEXPORT_TEST_TMPDIR } else { [IO.Path]::GetTempPath() }
+$temporaryParent = if ($env:KINKEEP_TEST_TMPDIR) { $env:KINKEEP_TEST_TMPDIR } else { [IO.Path]::GetTempPath() }
 $fixture = Join-Path $temporaryParent ('KinKeep Setup Test ' + [Guid]::NewGuid().ToString('N'))
 $bin = Join-Path $fixture 'fake docker bin'
 $log = Join-Path $fixture 'docker calls.log'
@@ -28,9 +28,9 @@ function Invoke-TestSetup([string]$Action, [string]$Mode = '', [bool]$MissingDoc
   $start.RedirectStandardError = $true
   $start.EnvironmentVariables['PATH'] = if ($MissingDocker) { Join-Path $fixture 'empty path' } else { "$bin;$env:PATH" }
   $start.EnvironmentVariables['PATHEXT'] = '.COM;.EXE;.BAT;.CMD'
-  $start.EnvironmentVariables['KINEXPORT_TEST_LOG'] = $log
-  $start.EnvironmentVariables['KINEXPORT_TEST_MODE'] = $Mode
-  $start.EnvironmentVariables['KINEXPORT_TOKEN'] = 'inherited-test-token'
+  $start.EnvironmentVariables['KINKEEP_TEST_LOG'] = $log
+  $start.EnvironmentVariables['KINKEEP_TEST_MODE'] = $Mode
+  $start.EnvironmentVariables['KINKEEP_TOKEN'] = 'inherited-test-token'
   $process = [Diagnostics.Process]::Start($start)
   try {
     $stdout = $process.StandardOutput.ReadToEnd()
@@ -53,8 +53,8 @@ using System;
 using System.IO;
 public class FakeDocker {
   public static int Main(string[] args) {
-    string log = Environment.GetEnvironmentVariable("KINEXPORT_TEST_LOG");
-    string mode = Environment.GetEnvironmentVariable("KINEXPORT_TEST_MODE");
+    string log = Environment.GetEnvironmentVariable("KINKEEP_TEST_LOG");
+    string mode = Environment.GetEnvironmentVariable("KINKEEP_TEST_MODE");
     if (!String.IsNullOrEmpty(log)) File.AppendAllText(log, String.Join("|", args) + "\n");
     if (args.Length == 0) return 1;
     if (args[0] == "compose" && args.Length > 1 && args[1] == "version") return mode == "version-fails" ? 1 : 0;
@@ -66,11 +66,11 @@ public class FakeDocker {
     if (args[0] == "ps") return 0;
     if (args[0] == "inspect") {
       if (mode == "inspect-fails") return 1;
-      Console.WriteLine("{\"io.kinexport.managed\":\"false\"}");
+      Console.WriteLine("{\"io.kinkeep.managed\":\"false\"}");
       return 0;
     }
     if (args[0] == "compose") {
-      if (Environment.GetEnvironmentVariable("KINEXPORT_TOKEN") != null) {
+      if (Environment.GetEnvironmentVariable("KINKEEP_TOKEN") != null) {
         if (!String.IsNullOrEmpty(log)) File.AppendAllText(log, "TOKEN_WAS_INHERITED\n");
         return 9;
       }
@@ -109,8 +109,8 @@ public class FakeDocker {
   Assert-True ($result.Code -eq 0) 'First start should succeed.'
   Assert-True (Test-Path -LiteralPath $envFile -PathType Leaf) 'First start should create credentials.'
   $credentials = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($envFile))
-  Assert-True ($credentials -cmatch '^KINEXPORT_TOKEN=[0-9a-f]{64}\n$') 'The generated token must be 32 random bytes in a BOM-free env file.'
-  Assert-True (-not $result.Output.Contains($credentials.Trim().Substring('KINEXPORT_TOKEN='.Length))) 'The generated token must not be printed.'
+  Assert-True ($credentials -cmatch '^KINKEEP_TOKEN=[0-9a-f]{64}\n$') 'The generated token must be 32 random bytes in a BOM-free env file.'
+  Assert-True (-not $result.Output.Contains($credentials.Trim().Substring('KINKEEP_TOKEN='.Length))) 'The generated token must not be printed.'
   Assert-True (-not ($result.Calls -contains 'TOKEN_WAS_INHERITED')) 'An inherited token must not reach Compose.'
   $expectedPrefix = "compose|--project-name|kinkeep-local|--env-file|$envFile|-f|$composeFile"
   Assert-True ($result.Calls -contains "$expectedPrefix|up|-d|--build") 'Start must pass the correct Compose project, paths and flags.'
@@ -149,10 +149,10 @@ public class FakeDocker {
   Assert-True ($result.Code -eq 0) 'Help must work without Docker.'
   $result = Invoke-TestSetup 'invalid-command' '' $true
   Assert-True ($result.Code -ne 0) 'An unknown command must fail.'
-  [IO.File]::WriteAllText($envFile, "KINEXPORT_TOKEN=`n")
+  [IO.File]::WriteAllText($envFile, "KINKEEP_TOKEN=`n")
   $result = Invoke-TestSetup 'start'
   Assert-True ($result.Code -ne 0) 'Empty existing credentials must be rejected.'
-  Assert-True ([IO.File]::ReadAllText($envFile) -ceq "KINEXPORT_TOKEN=`n") 'Invalid existing credentials must not be overwritten.'
+  Assert-True ([IO.File]::ReadAllText($envFile) -ceq "KINKEEP_TOKEN=`n") 'Invalid existing credentials must not be overwritten.'
   Assert-True (-not ($result.Calls -match '^compose\|--project-name\|')) 'Invalid credentials must not change the Compose project.'
   Remove-Item -LiteralPath $envFile
   foreach ($action in @('stop', 'logs')) {

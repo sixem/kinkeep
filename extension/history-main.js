@@ -1,8 +1,8 @@
 // Read only the already-loaded React Query history window. This runs in the page
 // world because React's in-memory state is not visible to isolated scripts.
 (() => {
-  const REQUEST = 'KINEXPORT_HISTORY_REQUEST';
-  const RESPONSE = 'KINEXPORT_HISTORY_RESPONSE';
+  const REQUEST = 'KINKEEP_HISTORY_REQUEST';
+  const RESPONSE = 'KINKEEP_HISTORY_RESPONSE';
   const MAX_IDS = 500;
   const MAX_DOM_NODES = 30000;
   const MAX_FIBERS = 50000;

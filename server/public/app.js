@@ -1,11 +1,10 @@
 'use strict';
 const $ = (selector) => document.querySelector(selector);
-let token = sessionStorage.getItem('kinexport-token') || '';
-let selection = { accountId: null, kinId: null, conversationId: null, legacy: false };
+let token = sessionStorage.getItem('kinkeep-token') || '';
+let selection = { accountId: null, kinId: null, conversationId: null };
 let accounts = [];
 let kins = [];
 let conversations = [];
-let legacyConversations = [];
 let viewVersion = 0;
 let profileVersion = 0;
 let messagePaging = null;
@@ -107,7 +106,7 @@ function showToast(message, kind = 'info') {
 const SELECT_KIN_MESSAGE = 'Select a Kin above to view this page.';
 function placeholder(container, text) { container.replaceChildren(textElement('p', text, 'muted empty-state')); }
 function selectionPlaceholder(container, fallback) {
-  const noKin = !selection.kinId && !selection.legacy;
+  const noKin = !selection.kinId;
   placeholder(container, noKin ? SELECT_KIN_MESSAGE : fallback);
 }
 function showLoading(container) {
@@ -196,8 +195,8 @@ function selectSection(section) {
   }
   if (section === 'messages') revealMessagesAtBottom();
   updateMessageScrollControls();
-  if (section === 'journal' && selection.accountId && selection.kinId && !selection.legacy) return ensureJournal().catch(showError);
-  if (section === 'images' && selection.accountId && selection.kinId && !selection.legacy) return ensureImages().catch(showError);
+  if (section === 'journal' && selection.accountId && selection.kinId) return ensureJournal().catch(showError);
+  if (section === 'images' && selection.accountId && selection.kinId) return ensureImages().catch(showError);
 }
 const dropdowns = [
   { wrapper: '#account-dropdown', trigger: '#account-trigger', options: '#account-options' },
@@ -300,9 +299,9 @@ function clearConversations(message = 'Choose a Kin to see conversations.') {
   $('#conversations-help').textContent = message; $('#conversations').replaceChildren(); clearMessages();
 }
 function lock() {
-  ++viewVersion; token = ''; sessionStorage.removeItem('kinexport-token');
-  selection = { accountId: null, kinId: null, conversationId: null, legacy: false };
-  accounts = []; kins = []; conversations = []; legacyConversations = [];
+  ++viewVersion; token = ''; sessionStorage.removeItem('kinkeep-token');
+  selection = { accountId: null, kinId: null, conversationId: null };
+  accounts = []; kins = []; conversations = [];
   $('#token').value = ''; $('#login').hidden = false; $('#archive').hidden = true; $('#lock').hidden = true;
   closeDropdowns(); selectSection('welcome');
   for (const id of ['accounts', 'kins', 'conversations', 'search-results']) $(`#${id}`).replaceChildren();
@@ -311,29 +310,23 @@ function lock() {
 function renderAccounts() {
   const list = $('#accounts'); list.replaceChildren();
   const index = accounts.findIndex(account => account.accountId === selection.accountId);
-  const selected = index >= 0 && !selection.legacy ? accounts[index] : null;
+  const selected = index >= 0 ? accounts[index] : null;
   if (selected) $('#account-label').replaceChildren(textElement('span', `${accountName(selected)} `, 'account-label__name'), textElement('span', `(${shortAccountId(selected.accountId)})`, 'account-label__id'));
-  else $('#account-label').textContent = selection.legacy ? 'Unassigned archive' : 'Choose account';
+  else $('#account-label').textContent = 'Choose account';
   $('#account-trigger').setAttribute('aria-label', selected ? `Account: ${accountName(selected)} (${selected.accountId})` : `Account: ${$('#account-label').textContent}`);
-  if (!accounts.length && !legacyConversations.length) emptyList(list, 'No account records or conversations archived yet.');
+  if (!accounts.length) emptyList(list, 'No accounts archived yet.');
   accounts.forEach((account) => listButton(list, accountName(account), account.accountId,
-    !selection.legacy && account.accountId === selection.accountId,
+    account.accountId === selection.accountId,
     () => { closeDropdown(dropdowns[0], true); return selectAccount(account.accountId).catch(showError); }));
-  if (legacyConversations.length) listButton(list, 'Unassigned archive', 'Older conversations without an account and Kin', selection.legacy,
-    () => { closeDropdown(dropdowns[0], true); return selectLegacy().catch(showError); });
 }
 function renderKins() {
   const list = $('#kins'); list.replaceChildren();
   finishLoading(list);
   const index = kins.findIndex(kin => kin.kinId === selection.kinId);
-  $('#kin-label').textContent = selection.legacy ? 'Unassigned' : index >= 0 ? kinName(kins[index], index) : 'Choose Kin';
+  $('#kin-label').textContent = index >= 0 ? kinName(kins[index], index) : 'Choose Kin';
   $('#kin-trigger').setAttribute('aria-label', `Kin: ${$('#kin-label').textContent}`);
-  $('#kin-trigger').disabled = !selection.accountId || selection.legacy;
+  $('#kin-trigger').disabled = !selection.accountId;
   if ($('#kin-trigger').disabled) closeDropdown(dropdowns[1]);
-  if (selection.legacy) {
-    $('#kins-help').textContent = 'These older conversations are not assigned to an account or Kin.';
-    return;
-  }
   if (!selection.accountId) { $('#kins-help').textContent = 'Choose an account to see its Kins.'; return; }
   $('#kins-help').textContent = kins.length ? '' : 'No Kins archived for this account yet.';
   kins.forEach((kin, index) => listButton(list, kinName(kin, index), null, kin.kinId === selection.kinId,
@@ -352,18 +345,18 @@ function renderConversations() {
   if (conversations.length <= 1) closeDropdown(dropdowns[2]);
   const selectedIndex = conversations.findIndex(conversation => conversation.id === selection.conversationId);
   const selected = conversations[selectedIndex];
-  $('#conversation-label').textContent = selected ? (selection.legacy && selected.kinName ? `${selected.kinName}: ${conversationName(selected, selectedIndex)}` : conversationName(selected, selectedIndex)) : 'Choose conversation';
+  $('#conversation-label').textContent = selected ? conversationName(selected, selectedIndex) : 'Choose conversation';
   $('#conversation-trigger').setAttribute('aria-label', `Conversation: ${$('#conversation-label').textContent}`);
-  if (!selection.legacy && !selection.kinId) { $('#conversations-help').textContent = 'Choose a Kin to see conversations.'; return; }
+  if (!selection.kinId) { $('#conversations-help').textContent = 'Choose a Kin to see conversations.'; return; }
   $('#conversations-help').textContent = conversations.length ? '' : 'No conversations archived here yet.';
   conversations.forEach((conversation, index) => listButton(list,
-    selection.legacy && conversation.kinName ? `${conversation.kinName}: ${conversationName(conversation, index)}` : conversationName(conversation, index),
+    conversationName(conversation, index),
     countText(conversation.messageCount, 'message'), conversation.id === selection.conversationId,
     () => { closeDropdown(dropdowns[2], true); return selectConversation(conversation).catch(showError); }));
 }
 async function selectAccount(accountId, restore = {}) {
   const version = ++viewVersion;
-  selection = { accountId, kinId: null, conversationId: null, legacy: false }; kins = [];
+  selection = { accountId, kinId: null, conversationId: null }; kins = [];
   renderAccounts(); renderKins(); clearConversations(); clearProfile();
   if (restore.kinId) for (const id of ['messages', 'profile', 'settings-profile', 'journal-entries', 'images-entries']) showLoading($(`#${id}`));
   $('#kins-help').textContent = '';
@@ -379,16 +372,6 @@ async function selectAccount(accountId, restore = {}) {
     if (version === viewVersion) { $('#kins').replaceChildren(); $('#kins-help').textContent = 'Could not load Kins.'; finishLoading($('#kins')); if (restore.kinId) { clearConversations(); clearProfile(); } }
     throw error;
   }
-}
-async function selectLegacy(restore = {}) {
-  ++viewVersion;
-  selection = { accountId: null, kinId: null, conversationId: null, legacy: true };
-  kins = []; conversations = legacyConversations; renderAccounts(); renderKins(); renderConversations(); clearMessages();
-  clearProfile('Older unassigned conversations have no associated Kin profile.');
-  clearJournal('Older unassigned conversations have no associated Kin journal.');
-  clearImages('Older unassigned conversations have no associated Kin images.');
-  const conversation = conversations.find(item => item.id === restore.conversationId) || (conversations.length === 1 ? conversations[0] : null);
-  if (conversation) await selectConversation(conversation);
 }
 function isEncryptedProfileValue(value) {
   return typeof value === 'string' && /(?:^|:)U2FsdGVkX1[A-Za-z0-9+/=]+$/.test(value);
@@ -642,7 +625,7 @@ function renderImages(state) {
   if (state.nextOffset !== null && !state.loading && (rows * step < container.scrollTop + height + step * 3)) void loadImages(state, state.nextOffset).catch(showError);
 }
 function ensureImages() {
-  if (!selection.accountId || !selection.kinId || selection.legacy) return Promise.resolve();
+  if (!selection.accountId || !selection.kinId) return Promise.resolve();
   if (imagesState && imagesState.accountId === selection.accountId && imagesState.kinId === selection.kinId) return imagesState.loading ?? Promise.resolve();
   const state = { accountId: selection.accountId, kinId: selection.kinId, items: [], keys: new Set(), total: 0, nextOffset: 0, loading: null, mounted: new Map(), indices: new WeakMap(), observer: null, resizeObserver: null, frameHandle: null, grid: null, thumbnailQueue: [], thumbnailActive: 0 };
   imagesState = state; ++imagesVersion;
@@ -707,14 +690,14 @@ function clearJournal(message = 'Choose a Kin to view its journal.') {
   selectionPlaceholder($('#journal-entries'), message); finishLoading($('#journal-entries'));
 }
 function ensureJournal() {
-  if (!selection.accountId || !selection.kinId || selection.legacy) return Promise.resolve();
+  if (!selection.accountId || !selection.kinId) return Promise.resolve();
   if (journalPaging && journalPaging.accountId === selection.accountId && journalPaging.kinId === selection.kinId) return journalPaging.loading ?? Promise.resolve();
   const state = { accountId: selection.accountId, kinId: selection.kinId, offset: 0, nextOffset: null, total: 0, loading: null };
   journalPaging = state;
   return loadJournalPage(state, 0);
 }
 function journalIsCurrent(state, version) {
-  return journalPaging === state && journalVersion === version && !selection.legacy && selection.accountId === state.accountId && selection.kinId === state.kinId;
+  return journalPaging === state && journalVersion === version && selection.accountId === state.accountId && selection.kinId === state.kinId;
 }
 function renderJournalEntry(entry) {
   const article = document.createElement('article'); article.className = 'journal-entry';
@@ -793,20 +776,17 @@ function loadJournalPage(state, offset) {
   return task;
 }
 function reactionChips(reactions) {
-  if (!reactions || typeof reactions !== 'object') return null;
+  if (!reactions) return null;
   const counts = new Map();
-  for (const reaction of Array.isArray(reactions) ? reactions : Object.values(reactions)) {
-    const label = typeof reaction === 'string' ? reaction : reaction?.emoji ?? reaction?.name;
-    const count = reaction?.count ?? 1;
-    if (typeof label !== 'string' || !label.trim() || !Number.isSafeInteger(count) || count < 1) continue;
-    counts.set(label, (counts.get(label) ?? 0n) + BigInt(count));
+  for (const emoji of Object.values(reactions)) {
+    counts.set(emoji, (counts.get(emoji) ?? 0) + 1);
   }
   if (!counts.size) return null;
   const list = document.createElement('ul');
   list.className = 'message__reactions';
   list.setAttribute('aria-label', 'Reactions');
   for (const [label, count] of counts) {
-    list.append(textElement('li', count > 1n ? `${label} ${count}` : label));
+    list.append(textElement('li', count > 1 ? `${label} ${count}` : label));
   }
   return list;
 }
@@ -854,7 +834,7 @@ async function selectConversation(conversation) {
   showLoading($('#messages'));
   $('#message-paging').hidden = true;
   const state = { conversationId: conversation.id, accountId: selection.accountId, kinId: selection.kinId,
-    legacy: selection.legacy, page: null, nextCursor: null, newerCursor: null };
+    page: null, nextCursor: null, newerCursor: null };
   messagePaging = state;
   updateMessageScrollControls();
   await loadMessagePage(state, 'newest');
@@ -889,7 +869,7 @@ async function loadMessagePage(state, direction) {
   const initialPage = state.page === null;
   if (!initialPage) $('#messages').setAttribute('aria-busy', 'true');
   const query = new URLSearchParams({ conversationId: state.conversationId, limit: String(MESSAGE_PAGE_SIZE) });
-  if (!state.legacy) { query.set('accountId', state.accountId); query.set('kinId', state.kinId); }
+  query.set('accountId', state.accountId); query.set('kinId', state.kinId);
   if (direction === 'oldest') query.set('direction', 'oldest');
   if (direction === 'older') query.set('cursor', state.nextCursor);
   if (direction === 'newer') { query.set('direction', 'newer'); query.set('cursor', state.newerCursor); }
@@ -901,9 +881,7 @@ async function loadMessagePage(state, direction) {
     container.classList.add('messages--concealed');
     container.replaceChildren();
     if (!data.messages.length) placeholder(container, 'No messages archived in this conversation yet.');
-    const kinName = state.legacy
-      ? (legacyConversations.find((item) => item.id === state.conversationId)?.kinName || '')
-      : (kins.find((item) => item.kinId === state.kinId)?.name || '');
+    const kinName = kins.find(item => item.kinId === state.kinId)?.name || '';
     // The API returns a stable newest-first cursor order (including ties).
     // Reverse it exactly, rather than re-sorting timestamps in the browser.
     for (const message of data.messages.slice().reverse()) container.append(renderMessage(message, kinName));
@@ -928,30 +906,25 @@ async function loadMessagePage(state, direction) {
 async function refresh() {
   const previous = { ...selection };
   const version = ++viewVersion;
-  const [digest, accountListing, legacyListing] = await Promise.all([
+  const [digest, accountListing] = await Promise.all([
     api('/api/digest').then((r) => r.json()), api('/api/accounts').then((r) => r.json()),
-    api('/api/conversations').then((r) => r.json()),
   ]);
   if (version !== viewVersion) return;
   $('#kin-count').textContent = digest.kins;
   $('#conversation-count').textContent = digest.conversations;
   $('#message-count').textContent = digest.messages;
   $('#last-archived').textContent = digest.lastArchivedAt ? displayDate(digest.lastArchivedAt) : '—';
-  accounts = accountListing.accounts; legacyConversations = legacyListing.conversations;
+  accounts = accountListing.accounts;
   // Rebuild navigation after a refresh or import, retaining valid selections.
-  selection = { accountId: null, kinId: null, conversationId: null, legacy: false };
+  selection = { accountId: null, kinId: null, conversationId: null };
   kins = []; renderAccounts(); renderKins(); clearConversations(); clearProfile();
-  if (previous.legacy && legacyConversations.length) {
-    await selectLegacy(previous);
-  } else {
-    const account = accounts.find((item) => item.accountId === previous.accountId) ||
-      (accounts.length === 1 && !legacyConversations.length ? accounts[0] : null);
-    if (account) await selectAccount(account.accountId, previous);
-  }
+  const account = accounts.find(item => item.accountId === previous.accountId) ||
+    (accounts.length === 1 ? accounts[0] : null);
+  if (account) await selectAccount(account.accountId, previous);
 }
 function showError(e) { showToast(e?.message || 'Something went wrong.', 'error'); }
 async function open() {
-  await refresh(); sessionStorage.setItem('kinexport-token', token);
+  await refresh(); sessionStorage.setItem('kinkeep-token', token);
   $('#login').hidden = true; $('#archive').hidden = false; $('#lock').hidden = false;
   revealMessagesAtBottom();
 }
@@ -972,7 +945,7 @@ $('#search-form').addEventListener('submit', async (event) => {
     container.append(textElement('p', `${result.messages.length} result(s)${result.messages.length === 100 ? ' (showing first 100)' : ''}.`));
     for (const message of newestMessages(result.messages)) {
       const article = renderMessage(message, message.kinName || '');
-      const context = message.kinName || (message.accountId ? 'Unnamed Kin' : 'Unassigned conversation');
+      const context = message.kinName || 'Unnamed Kin';
       const sender = article.querySelector('strong');
       if (sender.textContent !== context) sender.prepend(textElement('span', `${context}: `, 'search-kin'));
       container.append(article);

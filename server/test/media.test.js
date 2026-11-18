@@ -16,11 +16,11 @@ test('scoped image storage deduplicates files and retains portable metadata', ()
     assert.deepEqual(a.media.save(scope,[item]),{inserted:0,unchanged:1});
     const page=a.media.list(scope); assert.equal(page.total,1); assert.equal(page.items[0].variant,'preview');
     assert.equal(a.media.blob(page.items[0].sha256).bytes.toString('base64'),png);
-    assert.throws(()=>a.exportArchive(4),/cannot represent media/);
-    const snapshot=a.exportArchive(); assert.equal(snapshot.version,5); assert.equal(snapshot.media.blobs.length,1);
-    b.importArchive(snapshot); b.importArchive(snapshot); assert.deepEqual(b.media.exportData(),snapshot.media);
-    const bad=structuredClone(snapshot);bad.media.blobs[0].data=Buffer.from('bad').toString('base64');
-    assert.throws(()=>b.importArchive(bad),/Invalid|Unsupported|digest/);assert.equal(b.media.list(scope).total,1);
+    assert.equal(a.db.prepare('SELECT count(*) AS n FROM media_blobs').get().n, 1);
+    b.mergeSnapshot(a.db);
+    b.mergeSnapshot(a.db);
+    assert.deepEqual(b.media.list(scope), page);
+    assert.equal(b.media.blob(page.items[0].sha256).bytes.toString('base64'), png);
   } finally {a.db.close();b.db.close();}
 });
 test('rejects unsupported images and does not mix scopes',()=>{ const a=create();try{setup(a);a.upsertKin({accountId:'a',kinId:'other'});
@@ -48,7 +48,6 @@ test('thumbnail generation is cached and keeps the original export intact', asyn
     assert.equal(one.bytes.readUInt16LE(28) & 0x3fff, 384);
     assert.equal(a.db.prepare('SELECT count(*) AS n FROM media_thumbnails').get().n,1);
     assert.equal(a.media.blob(sha).bytes.toString('base64'),data);
-    assert.equal(a.media.exportData().blobs[0].data,data);
   } finally { a.db.close(); }
 });
 

@@ -7,7 +7,7 @@ import { buildExtension } from '../build-extension.mjs';
 import { buildFirefox } from '../build-firefox.mjs';
 
 test('Firefox package contains its runtime files and browser-compatible permissions', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'kinexport-firefox-test-'));
+  const dir = await mkdtemp(join(tmpdir(), 'kinkeep-firefox-test-'));
   try {
     const output = join(dir, 'extension');
     const chromiumPath = new URL('../../extension/manifest.json', import.meta.url);
@@ -32,7 +32,7 @@ test('Firefox package contains its runtime files and browser-compatible permissi
 });
 
 test('browser builds exclude development files and preserve the previous package on failure', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'kinexport-firefox-private-test-'));
+  const dir = await mkdtemp(join(tmpdir(), 'kinkeep-firefox-private-test-'));
   try {
     const input = join(dir, 'source'), output = join(dir, 'extension');
     await cp(new URL('../../extension/', import.meta.url), input, { recursive: true });

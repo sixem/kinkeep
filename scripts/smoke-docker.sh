@@ -4,7 +4,7 @@
 set -euo pipefail
 
 project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-check_project="kinexport-smoke-$(date +%s)-$$-$RANDOM"
+check_project="kinkeep-smoke-$(date +%s)-$$-$RANDOM"
 check_volume="${check_project}_archive-data"
 check_network="${check_project}_default"
 check_image="${check_project}-archive"
@@ -22,11 +22,11 @@ if [[ -n $(docker ps -aq --filter "label=com.docker.compose.project=$check_proje
   printf '%s\n' 'A resource with the temporary test name already exists; no changes made.' >&2
   exit 1
 fi
-check_tmp=$(mktemp -d "${TMPDIR:-/tmp}/kinexport-smoke.XXXXXXXX")
+check_tmp=$(mktemp -d "${TMPDIR:-/tmp}/kinkeep-smoke.XXXXXXXX")
 cleanup() {
   local ids
   # Only this freshly created, labeled project and its exact resources are removed.
-  ids=$(docker ps -aq --filter "label=com.docker.compose.project=$check_project" --filter 'label=io.kinexport.managed=true' 2>/dev/null) || ids=''
+  ids=$(docker ps -aq --filter "label=com.docker.compose.project=$check_project" --filter 'label=io.kinkeep.managed=true' 2>/dev/null) || ids=''
   if [[ -n "$ids" ]]; then docker rm -f $ids >/dev/null 2>&1 || :; fi
   docker volume rm "$check_volume" >/dev/null 2>&1 || :
   docker network rm "$check_network" >/dev/null 2>&1 || :
@@ -34,9 +34,9 @@ cleanup() {
   rm -rf -- "$check_tmp"
 }
 trap cleanup EXIT
-printf 'KINEXPORT_TOKEN=%s\n' "$check_token" > "$check_tmp/.env"
+printf 'KINKEEP_TOKEN=%s\n' "$check_token" > "$check_tmp/.env"
 compose() {
-  (unset KINEXPORT_TOKEN; docker compose --project-name "$check_project" --env-file "$check_tmp/.env" -f "$project_dir/docker-compose.yml" "$@")
+  (unset KINKEEP_TOKEN; docker compose --project-name "$check_project" --env-file "$check_tmp/.env" -f "$project_dir/docker-compose.yml" "$@")
 }
 
 compose build --quiet archive >/dev/null
@@ -77,8 +77,12 @@ for (const resource of ['/', '/app.js', '/style.css', '/icons/settings.svg', '/f
 }
 await access('public/fonts/INTER-LICENSE.txt');
 await access('public/icons/LUCIDE-LICENSE.txt');
-await call('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: 'example' }) });
-await call('/api/kins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId: 'example', kinId: 'example', name: 'Example' }) });
+const empty = await (await call('/api/digest')).json();
+if (empty.accounts !== 0 || empty.messages !== 0) throw new Error('Expected an empty archive on first start');
+const session = await (await call('/api/session')).json();
+if (session.authenticated !== true) throw new Error('Authenticated connection check failed');
+await call('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ account: { accountId: 'example' }, kins: [{ accountId: 'example', kinId: 'example', name: 'Example' }] }) });
 const zip = new Uint8Array(await (await call('/api/download/portable')).arrayBuffer());
 if (zip.length < 100 || zip[0] !== 0x50 || zip[1] !== 0x4b) throw new Error('Invalid ZIP export');
 await call('/api/import/portable', { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: zip });

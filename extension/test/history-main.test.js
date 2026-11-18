@@ -20,7 +20,7 @@ function makeBridge(clients, pathname = '/v2/kin-settings/kin-a/') {
   vm.runInNewContext(script, { window, document, location, NodeFilter: { SHOW_ELEMENT: 1 }, Date });
   return { replies, send(data, overrides = {}) { listener({ source: window, origin: location.origin, data, ...overrides }); } };
 }
-const request = (ids = ['message-a']) => ({ type: 'KINEXPORT_HISTORY_REQUEST', nonce: 'nonce_123', uid: 'user-a', kinId: 'kin-a', ids });
+const request = (ids = ['message-a']) => ({ type: 'KINKEEP_HISTORY_REQUEST', nonce: 'nonce_123', uid: 'user-a', kinId: 'kin-a', ids });
 
 test('returns only requested IDs, original text and allowlisted metadata from matching queries', () => {
   const bridge = makeBridge([client([
@@ -29,7 +29,7 @@ test('returns only requested IDs, original text and allowlisted metadata from ma
     query(key('user-a', 'another-kin'), [entry('message-b')]),
   ])]);
   bridge.send(request(['message-a', 'message-b']));
-  assert.deepEqual(bridge.replies, [{ value: { type: 'KINEXPORT_HISTORY_RESPONSE', nonce: 'nonce_123', uid: 'user-a', kinId: 'kin-a', records: [{ id: 'message-a', timestamp: 1730000000000, isSelf: true, text: 'private text' }] }, origin: 'https://kindroid.ai' }]);
+  assert.deepEqual(bridge.replies, [{ value: { type: 'KINKEEP_HISTORY_RESPONSE', nonce: 'nonce_123', uid: 'user-a', kinId: 'kin-a', records: [{ id: 'message-a', timestamp: 1730000000000, isSelf: true, text: 'private text' }] }, origin: 'https://kindroid.ai' }]);
 });
 
 test('rejects conflicting and malformed duplicate metadata and wrong query shapes', () => {

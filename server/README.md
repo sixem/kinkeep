@@ -4,7 +4,7 @@ The server stores records and images in SQLite and serves the dashboard and HTTP
 
 ## Run without Docker
 
-Install Node.js 24+ and ImageMagick 7 with WebP support. Set the `KINEXPORT_TOKEN` environment variable to a random secret of at least 32 characters. Run the following from `server/`.
+Install Node.js 24+ and ImageMagick 7 with WebP support. Set the `KINKEEP_TOKEN` environment variable to a random secret of at least 32 characters. Run the following from `server/`.
 
 ```sh
 npm ci --ignore-scripts
@@ -13,14 +13,14 @@ npm start
 
 | Environment variable | Default |
 | --- | --- |
-| `KINEXPORT_TOKEN` | Required |
+| `KINKEEP_TOKEN` | Required |
 | `HOST`, `PORT` | `127.0.0.1`, `8765` |
-| `DATABASE_PATH` | `./data/kinexport.sqlite` |
+| `DATABASE_PATH` | `./data/kinkeep.sqlite` |
 | `ALLOWED_HOSTS` | `127.0.0.1,localhost,::1` (comma-separated HTTP hostnames) |
 
 ## HTTP API
 
-Send `Authorization: Bearer <token>` with API requests. Use `Content-Type: application/json` for JSON writes. `GET /api/health` returns `{"status":"ok"}` without credentials. An authenticated `POST /api/probe` with `{"messages":[]}` checks the token.
+Send `Authorization: Bearer <token>` with API requests. Use `Content-Type: application/json` for JSON writes. `GET /api/health` returns `{"status":"ok"}` without credentials. `GET /api/session` validates the token and returns `{"authenticated":true}`.
 
 ### Accounts and records
 
@@ -28,9 +28,9 @@ For scoped records, include both `accountId` and `kinId` in the query string for
 
 | Method | Path | Operation |
 | --- | --- | --- |
-| GET / POST | `/api/accounts` | List accounts or upsert an account by `accountId`. Optional fields include `displayName` and `sourceTimestamp`. |
-| GET / POST | `/api/kins` | List Kins by `accountId`, or upsert a Kin by account and Kin ID. Optional fields include `name` and `sourceTimestamp`. |
-| POST | `/api/inventory` | Upsert `{account, kins}` in one transaction, up to 500 Kins for that account. Returns `accountId` and `kinCount`. |
+| GET | `/api/accounts` | List accounts. |
+| GET | `/api/kins` | List Kins by `accountId`. |
+| POST | `/api/inventory` | Save `{account, kins}` in one transaction. The account requires `accountId`. Each of up to 500 Kins requires `accountId` and `kinId`. Returns `accountId` and `kinCount`. |
 | GET / POST | `/api/kins/profile` | Read a profile with its history, or merge supplied `fields`. Each field has a `value` and optional UTC `observedAt`. |
 | GET / POST | `/api/kins/journal` | Page through journal entries, or write up to 500 `entries`. Each requires `entryId`, UTC `createdAt`, and `description`. |
 | GET | `/api/conversations` | List conversations in scope. |
@@ -43,7 +43,7 @@ For scoped records, include both `accountId` and `kinId` in the query string for
 
 Journal entries accept optional `keywords` and `origin`. Both journal and media reads accept `limit` (1–100, default 50) and `offset`. Profile writes retain omitted fields and distinguish explicit nulls from empty strings, zero, and false. See the field types in [validation.js](validation.js).
 
-Message reads accept `limit` (1–100) for newest-first pagination. Pass the returned `nextCursor` as `cursor` for older records, or use `direction=newer` with `newerCursor`. Use `direction=oldest` to start at the other end. Omitting both scope IDs on conversation or message reads selects unassigned records.
+Message reads accept `limit` (1–100) for newest-first pagination. Pass the returned `nextCursor` as `cursor` for older records, or use `direction=newer` with `newerCursor`. Use `direction=oldest` to start at the other end.
 
 ### Message writes
 

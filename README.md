@@ -24,7 +24,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 start
 
 The shell script uses OpenSSL to generate the access token. On WSL, enable your distribution in [Docker Desktop's WSL integration settings](https://docs.docker.com/desktop/features/wsl/).
 
-Setup starts the dashboard at [127.0.0.1:8765](http://127.0.0.1:8765) and creates an access token in the project's `.env` file. Copy the value of `KINEXPORT_TOKEN` for the next step.
+Setup starts the dashboard at [127.0.0.1:8765](http://127.0.0.1:8765) and creates an access token in the project's `.env` file. Copy the value of `KINKEEP_TOKEN` for the next step.
 
 ## Connect the extension
 

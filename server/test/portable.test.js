@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import yazl from 'yazl';
 import yauzl from 'yauzl';
 import { createArchive, createHttpServer } from '../server.js';
+import { archiveSchema } from '../archive.js';
 import { streamPortable, streamBackup, importPortable, restoreBackup, validateSnapshot } from '../portable.js';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAABQAAAAeAQMAAAAW3KwoAAAAIGNIUk0AAHomAACAhAAA+gAAAID6AACAhAAA6mAAADqYAAAXcJy6UTwAAAAGUExURQAA/////3vcmSwAAAABYktHRAH/Ai3eAAAAB3RJTUUH6gsQEg0c4s+h1gAAAAxJREFUCNdjYBgYAAAAeAAB2u2iVwAAACV0RVh0ZGF0ZTpjcmVhdGUAMjAyNi0xMS0xNlQxODoxMzoyOCswMDowMISgOgkAAAAldEVYdGRhdGU6bW9kaWZ5ADIwMjYtMTEtMTZUMTg6MTM6MjgrMDA6MDD1/YK1AAAAKHRFWHRkYXRlOnRpbWVzdGFtcAAyMDI2LTExLTE2VDE4OjEzOjI4KzAwOjAwouijagAAAABJRU5ErkJggg==';
@@ -22,10 +23,12 @@ function populate(a) {
   a.upsertJournal({accountId:'a',kinId:'k',entries:[{entryId:'j',createdAt:timestamp,description:'Journal alternative'}]});
   a.scopedIngest({accountId:'a',kinId:'k'},[{conversationId:'main',messageId:'m',fingerprint:'one',sender:'kin',timestamp,content:'Original',data:{captureSource:'cache',reactions:{actor:'❤️'}}}]);
   a.scopedIngest({accountId:'a',kinId:'k'},[{conversationId:'main',messageId:'m',fingerprint:'two',sender:'kin',timestamp,content:'Edited',data:{captureSource:'cache',reactions:{actor:'👩🏽‍🚀'}}}]);
-  a.ingest([{conversationId:'legacy',messageId:'old',fingerprint:'old',content:'Legacy',kinId:null,kinName:'Old',sender:null,timestamp:null,firstSeen:null,lastSeen:null}]);
   a.media.save({accountId:'a',kinId:'k'},[{sourceId:'image',kind:'selfie',variant:'preview',createdAt:timestamp,mime:'image/png',data:png}]);
 }
-function snapshot(a) { const o=a.exportArchive(); delete o.exportedAt; delete o.legacy.exportedAt; return o; }
+function snapshot(archive) {
+  return Object.fromEntries(archiveSchema(archive.db).filter(([type]) => type === 'table')
+    .map(([, name]) => [name, archive.db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all()]));
+}
 function output() { const chunks=[];const stream=new Writable({write(chunk,_enc,done){chunks.push(Buffer.from(chunk));done()}});stream.writeHead=(status,headers)=>{stream.status=status;stream.headers=headers};return {stream,bytes:()=>Buffer.concat(chunks)}; }
 async function zipBuffer(entries, { zip64=false } = {}) { const z=new yazl.ZipFile(),sink=output();z.on('error',e=>sink.stream.destroy(e));z.outputStream.pipe(sink.stream);for(const [name,data] of entries)z.addBuffer(Buffer.from(data),name,{forceZip64Format:zip64});z.end({forceZip64Format:zip64});await new Promise((resolve,reject)=>{sink.stream.on('finish',resolve);sink.stream.on('error',reject)});return sink.bytes(); }
 async function unzipEntries(bytes) {
@@ -35,21 +38,21 @@ async function unzipEntries(bytes) {
 }
 
 test('portable ZIP streams and merges a complete archive without duplicating existing records', async () => {
-  const dir=await mkdtemp(join(tmpdir(),'kinexport-portable-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
+  const dir=await mkdtemp(join(tmpdir(),'kinkeep-portable-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
   try { populate(src);const expected=snapshot(src),sink=output();await streamPortable(src,sink.stream);assert.equal(sink.stream.headers['Content-Type'],'application/zip');
     const bytes=sink.bytes(),zip=await yauzl.fromBufferPromise(bytes),names=[];for await(const entry of zip.eachEntry())names.push(entry.fileName);
     assert.ok(names.includes('manifest.json'));assert.ok(names.includes('archive.sqlite3'));assert.equal(names.filter(n=>/^media\/[a-f0-9]{64}\.png$/.test(n)).length,1);
-    const imported=await importPortable(dst,Readable.from(bytes));assert.equal(imported.inserted,2);assert.deepEqual(snapshot(dst),expected);
+    const imported=await importPortable(dst,Readable.from(bytes));assert.equal(imported.inserted,1);assert.deepEqual(snapshot(dst),expected);
     const repeat=await importPortable(dst,Readable.from(await zipBuffer(await unzipEntries(bytes),{zip64:true})));assert.equal(repeat.inserted,0);assert.deepEqual(snapshot(dst),expected);
   } finally {src.db.close();dst.db.close();await rm(dir,{recursive:true,force:true})}
 });
 test('invalid portable archives do not change the existing archive', async () => {
-  const dir=await mkdtemp(join(tmpdir(),'kinexport-portable-test-'));const dst=archive(dir,'target');
+  const dir=await mkdtemp(join(tmpdir(),'kinkeep-portable-test-'));const dst=archive(dir,'target');
   try {populate(dst);const before=snapshot(dst);for(const bytes of [Buffer.from('not a zip'),await zipBuffer([['manifest.json','{}'],['archive.sqlite3','invalid']]),await zipBuffer([['unexpected.txt','bad']])]) {await assert.rejects(importPortable(dst,Readable.from(bytes)));assert.deepEqual(snapshot(dst),before)}}
   finally {dst.db.close();await rm(dir,{recursive:true,force:true})}
 });
 test('corrupted image data is rejected before changing the archive', async () => {
-  const dir=await mkdtemp(join(tmpdir(),'kinexport-portable-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
+  const dir=await mkdtemp(join(tmpdir(),'kinkeep-portable-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
   try {
     populate(src);dst.upsertAccount({accountId:'existing'});const before=snapshot(dst),sink=output();await streamPortable(src,sink.stream);
     const entries=await unzipEntries(sink.bytes()),image=entries.find(([name])=>name.startsWith('media/'));image[1][image[1].length-1]^=1;
@@ -57,7 +60,7 @@ test('corrupted image data is rejected before changing the archive', async () =>
   } finally {src.db.close();dst.db.close();await rm(dir,{recursive:true,force:true})}
 });
 test('a late invalid record rolls back the entire portable import', async () => {
-  const dir=await mkdtemp(join(tmpdir(),'kinexport-portable-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
+  const dir=await mkdtemp(join(tmpdir(),'kinkeep-portable-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
   try {
     populate(src); dst.upsertAccount({accountId:'existing'}); const before=snapshot(dst);
     src.db.prepare('INSERT INTO kin_profile_fields VALUES(?,?,?,?,?,?,?)').run('a','k','unsupported_field','"bad"',timestamp,timestamp,'invalid-event');
@@ -78,17 +81,27 @@ test('SQLite backup restores exactly and saves the previous archive; invalid bac
 
 test('snapshot validation checks user tables whose names start with sqlite', () => {
   const src = createArchive({ databasePath: ':memory:', token: 'test-token' });
-  const dst = createArchive({ databasePath: ':memory:', token: 'test-token' });
   try {
     src.db.exec('CREATE TABLE sqliteExtra(note TEXT)');
-    for (const portable of [true, false]) {
-      assert.throws(() => validateSnapshot(src.db, dst.db, { portable }), /Unsupported SQLite archive schema/);
-    }
-  } finally { src.db.close(); dst.db.close(); }
+    assert.throws(() => validateSnapshot(src.db), /Unsupported SQLite archive schema/);
+  } finally { src.db.close(); }
+});
+
+test('opening an incompatible database leaves its schema and contents intact', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kinkeep-schema-test-'));
+  const path = join(dir, 'archive.sqlite3');
+  try {
+    const other = new DatabaseSync(path);
+    try { other.exec("CREATE TABLE example (value TEXT); INSERT INTO example VALUES ('sample');"); }
+    finally { other.close(); }
+    const before = await readFile(path);
+    assert.throws(() => createArchive({ databasePath: path, token: 'test-token' }), /Unsupported SQLite archive schema/);
+    assert.deepEqual(await readFile(path), before);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('restore preserves capture writes made while its recovery copy is being prepared', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'kinexport-restore-race-'));
+  const dir = await mkdtemp(join(tmpdir(), 'kinkeep-restore-race-'));
   const src = archive(dir, 'source'), dst = archive(dir, 'target');
   try {
     src.upsertAccount({ accountId: 'replacement' });
@@ -124,7 +137,7 @@ test('file uploads with oversized declared lengths are refused before consuming 
 });
 
 test('HTTP downloads require authentication or a one-use format-specific cookie', async () => {
-  const dir=await mkdtemp(join(tmpdir(),'kinexport-http-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
+  const dir=await mkdtemp(join(tmpdir(),'kinkeep-http-test-'));const src=archive(dir,'source'),dst=archive(dir,'target');
   function client(a) {
     const server=createHttpServer({archive:a,token:'secret'});
     return async (method,path,{token,cookie,type,body}={}) => {

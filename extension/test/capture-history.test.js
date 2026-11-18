@@ -25,7 +25,7 @@ async function harness({ flipOwner = false, timestamp = 1730000000000, text, cha
     postMessage: request => queueMicrotask(() => {
       requests++;
       const currentText = requests > 1 && changedText !== undefined ? changedText : text;
-      const data = { type: 'KINEXPORT_HISTORY_RESPONSE', nonce: request.nonce, uid, kinId, records: [{ id: 'msg', timestamp, isSelf: false, ...(currentText === undefined ? {} : { text: currentText, chatHistoryRecordId: 'history-1' }) }] };
+      const data = { type: 'KINKEEP_HISTORY_RESPONSE', nonce: request.nonce, uid, kinId, records: [{ id: 'msg', timestamp, isSelf: false, ...(currentText === undefined ? {} : { text: currentText, chatHistoryRecordId: 'history-1' }) }] };
       for (const fn of [...listeners]) fn({ source: window, origin: location.origin, data });
     }),
   };

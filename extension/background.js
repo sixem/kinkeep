@@ -3,11 +3,10 @@ import { extractImages } from './mhtml.js';
 
 const ext = globalThis.browser ?? globalThis.chrome;
 
-const ALARM = 'kinexport-health';
+const ALARM = 'kinkeep-health';
 const FAILURE_DEBOUNCE_MS = 15_000;
 const MAX_BATCH = 100;
 let monitoring = null;
-let legacyInventoryEndpoint = null;
 
 async function getSettings() {
   return { ...DEFAULT_SETTINGS, ...(await ext.storage.local.get('settings')).settings };
@@ -49,7 +48,7 @@ async function fail(reason) {
   let notified = previous.notified ?? false;
   if (!notified && now - failureSince >= FAILURE_DEBOUNCE_MS) {
     try {
-      await ext.notifications.create('kinexport-unavailable', {
+      await ext.notifications.create('kinkeep-unavailable', {
         type: 'basic', iconUrl: 'icons/icon128.png', title: 'KinKeep archive unavailable',
         message: 'Messages seen while the archive is unavailable may not be saved. Open KinKeep to check your connection.',
       });
@@ -94,7 +93,7 @@ async function verifyStep(stage, action) {
     const httpStatus = /^Archive returned HTTP ([1-5]\d\d)\.$/.exec(message);
     const detail = httpStatus ? `Archive returned HTTP ${httpStatus[1]}.`
       : error?.name === 'TimeoutError' || /timed out|timeout/i.test(message) ? 'Connection timed out.'
-      : error?.name === 'SyntaxError' || /^(Archive health check returned an unexpected response\.|The archive returned an (invalid probe response|unknown probe status)\.)$/.test(message) ? 'Unexpected server response.'
+      : error?.name === 'SyntaxError' || /^Unexpected (health|session) response\.$/.test(message) ? 'Unexpected server response.'
       : 'Connection failed.';
     throw new Error(`${stage}: ${detail}`);
   }
@@ -102,18 +101,19 @@ async function verifyStep(stage, action) {
 async function verifyServer(settings, checkHealth) {
   if (!settings.token) throw new Error('Configure an archive access token.');
   if (!(await ext.permissions.contains({ origins: [permissionFor(settings.endpoint)] }))) throw new Error('Archive endpoint permission has not been granted.');
-  // A successful authenticated probe also proves reachability. Only a manual
+  // A successful authenticated request also proves reachability. Only a manual
   // connection test needs a separate health check for diagnostics.
   if (checkHealth) {
     if (!(await sameConfiguration(settings))) throw new Error('Archiving settings changed.');
     await verifyStep('Health check', async () => {
       const health = await request(settings, '/api/health');
-      if (health?.status !== 'ok') throw new Error('Archive health check returned an unexpected response.');
+      if (health?.status !== 'ok') throw new Error('Unexpected health response.');
     });
   }
   if (!(await sameConfiguration(settings))) throw new Error('Archiving settings changed.');
-  await verifyStep('Authenticated probe', async () => {
-    selectMissing([], await request(settings, '/api/probe', { messages: [] }));
+  await verifyStep('Authenticated check', async () => {
+    const session = await request(settings, '/api/session');
+    if (session?.authenticated !== true) throw new Error('Unexpected session response.');
   });
 }
 async function checkConnection(force = false) {
@@ -141,33 +141,11 @@ async function saveInventory(account, kins) {
     return { ok: false, reason: 'Invalid account or Kin inventory.' };
   }
   try {
-    // Older archives only have individual upserts. Remember that capability
-    // for the worker lifetime, so subsequent scans do not repeat the 404.
-    let useLegacy = legacyInventoryEndpoint === settings.endpoint;
-    if (!useLegacy) {
-      for (let offset = 0; offset < Math.max(1, kins.length); offset += MAX_BATCH) {
-        if (!(await stillCurrent(settings))) throw new Error('Archiving settings changed.');
-        const batch = kins.slice(offset, offset + MAX_BATCH);
-        let result;
-        try { result = await request(settings, '/api/inventory', { account, kins: batch }); }
-        catch (error) {
-          if (offset || error.status !== 404) throw error;
-          useLegacy = true;
-          legacyInventoryEndpoint = settings.endpoint;
-          break;
-        }
-        if (result?.accountId !== account.accountId || result.kinCount !== batch.length) throw new Error('The archive did not confirm the inventory.');
-      }
-    }
-    if (useLegacy) {
+    for (let offset = 0; offset < Math.max(1, kins.length); offset += MAX_BATCH) {
       if (!(await stillCurrent(settings))) throw new Error('Archiving settings changed.');
-      const result = await request(settings, '/api/accounts', account);
-      if (result?.account?.accountId !== account.accountId) throw new Error('The archive did not confirm the account.');
-      for (const kin of kins) {
-        if (!(await stillCurrent(settings))) throw new Error('Archiving settings changed.');
-        const result = await request(settings, '/api/kins', kin);
-        if (result?.kin?.accountId !== account.accountId || result.kin.kinId !== kin.kinId) throw new Error('The archive did not confirm the Kin.');
-      }
+      const batch = kins.slice(offset, offset + MAX_BATCH);
+      const result = await request(settings, '/api/inventory', { account, kins: batch });
+      if (result?.accountId !== account.accountId || result.kinCount !== batch.length) throw new Error('The archive did not confirm the inventory.');
     }
     if (await stillCurrent(settings)) await online();
     return { ok: true };

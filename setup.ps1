@@ -49,7 +49,7 @@ function Test-ProjectOwnership {
     $json = & $DockerCommand inspect --format '{{json .Config.Labels}}' $id
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect Docker container labels.' }
     $labels = $json | ConvertFrom-Json
-    if ($null -eq $labels -or $labels.'io.kinexport.managed' -ne 'true') {
+    if ($null -eq $labels -or $labels.'io.kinkeep.managed' -ne 'true') {
       throw "A container in Compose project '$ProjectName' is not marked as KinKeep-managed. Refusing to change it."
     }
   }
@@ -79,7 +79,7 @@ function Initialize-EnvFile {
       $stream = [System.IO.File]::Open($EnvFile, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
       try {
         $writer = New-Object System.IO.StreamWriter($stream, [System.Text.Encoding]::ASCII)
-        try { $writer.Write("KINEXPORT_TOKEN=$token`n") } finally { $writer.Dispose() }
+        try { $writer.Write("KINKEEP_TOKEN=$token`n") } finally { $writer.Dispose() }
       } finally { $stream.Dispose() }
     } catch {
       throw "Could not create $EnvFile; check its permissions or use the existing file."
@@ -87,20 +87,20 @@ function Initialize-EnvFile {
     Protect-EnvFile
     Write-Output "Created archive credentials in $EnvFile"
   }
-  $valid = @(Get-Content -LiteralPath $EnvFile | Where-Object { $_ -cmatch '^KINEXPORT_TOKEN=.+' })
-  if ($valid.Count -eq 0) { throw "Set a nonempty KINEXPORT_TOKEN in $EnvFile before continuing." }
+  $valid = @(Get-Content -LiteralPath $EnvFile | Where-Object { $_ -cmatch '^KINKEEP_TOKEN=.+' })
+  if ($valid.Count -eq 0) { throw "Set a nonempty KINKEEP_TOKEN in $EnvFile before continuing." }
 }
 
 function Invoke-Compose {
   param([string[]]$ComposeArgs)
   # Compose otherwise gives an inherited shell variable precedence over .env.
-  $previous = [Environment]::GetEnvironmentVariable('KINEXPORT_TOKEN', 'Process')
+  $previous = [Environment]::GetEnvironmentVariable('KINKEEP_TOKEN', 'Process')
   try {
-    [Environment]::SetEnvironmentVariable('KINEXPORT_TOKEN', $null, 'Process')
+    [Environment]::SetEnvironmentVariable('KINKEEP_TOKEN', $null, 'Process')
     & $DockerCommand compose --project-name $ProjectName --env-file $EnvFile -f $ComposeFile @ComposeArgs
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed (exit $LASTEXITCODE)." }
   } finally {
-    [Environment]::SetEnvironmentVariable('KINEXPORT_TOKEN', $previous, 'Process')
+    [Environment]::SetEnvironmentVariable('KINKEEP_TOKEN', $previous, 'Process')
   }
 }
 
@@ -135,7 +135,7 @@ function Invoke-Action([string]$Action) {
   }
   if ($actionName -notin @('logs', 'stop')) {
     Write-Output "`nArchive: http://127.0.0.1:8765`nCredentials: $EnvFile"
-    Write-Output 'Copy the KINEXPORT_TOKEN value into the extension settings. Keep it private.'
+    Write-Output 'Copy the KINKEEP_TOKEN value into the extension settings. Keep it private.'
   }
 }
 

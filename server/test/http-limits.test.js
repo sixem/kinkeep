@@ -19,7 +19,7 @@ test('declared oversized JSON gets an immediate 413 and closes the HTTP connecti
   const archive = createArchive({ databasePath: ':memory:', token: 'synthetic-token' });
   const server = createHttpServer({ archive, token: 'synthetic-token' });
   const req = new PassThrough();
-  Object.assign(req, { url: '/api/accounts', method: 'POST', headers: { host: '127.0.0.1:8765',
+  Object.assign(req, { url: '/api/inventory', method: 'POST', headers: { host: '127.0.0.1:8765',
     authorization: 'Bearer synthetic-token', 'content-type': 'application/json', 'content-length': String(128 * 1024 * 1024 + 1) } });
   try {
     const result = await new Promise(resolve => {
@@ -50,7 +50,7 @@ test('an actual HTTP client receives 413 without sending the declared oversized 
       throw err;
     }
     const result = await new Promise((resolve, reject) => {
-      const req = request({ hostname: '127.0.0.1', port: server.address().port, path: '/api/accounts', method: 'POST',
+      const req = request({ hostname: '127.0.0.1', port: server.address().port, path: '/api/inventory', method: 'POST',
         headers: { authorization: 'Bearer synthetic-token', 'content-type': 'application/json', 'content-length': String(128 * 1024 * 1024 + 1) } }, res => {
         res.resume(); res.on('end', () => resolve({ status: res.statusCode, connection: res.headers.connection }));
       });

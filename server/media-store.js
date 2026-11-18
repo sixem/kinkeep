@@ -96,20 +96,6 @@ export function createMediaStore(db, { requireScope, transact, generateThumbnail
     const task = new Promise((resolve,reject) => thumbnailQueue.push({ sha256, resolve, reject }));
     pendingThumbnails.set(sha256, task); runThumbnailQueue(); return task;
   }
-  function count() { return db.prepare('SELECT count(*) AS n FROM media_items').get().n; }
-  function exportData() {
-    const blobs=db.prepare('SELECT sha256,mime,bytes FROM media_blobs ORDER BY sha256').all().map(x=>({sha256:x.sha256,mime:x.mime,data:Buffer.from(x.bytes).toString('base64')}));
-    const items=db.prepare('SELECT account_id AS accountId,kin_id AS kinId,kind,source_id AS sourceId,variant,sha256,created_at AS createdAt,prompt,message_id AS messageId,first_seen AS firstSeen,last_seen AS lastSeen FROM media_items ORDER BY account_id,kin_id,kind,source_id,variant,sha256').all();
-    return {blobs,items};
-  }
-  function validateArchive(raw) {
-    if(!record(raw)||Object.keys(raw).some(x=>!['blobs','items'].includes(x))||!Array.isArray(raw.blobs)||!Array.isArray(raw.items)||raw.blobs.length>250000||raw.items.length>250000)fail('Invalid media archive');
-    const blobs=raw.blobs.map(x=>{if(!record(x)||Object.keys(x).some(k=>!['sha256','mime','data'].includes(k))||!/^[0-9a-f]{64}$/.test(x.sha256))fail('Invalid media file');const bytes=image(x.data,x.mime);if(hash(bytes)!==x.sha256)fail('Media digest mismatch');return {...x,bytes};});
-    const ids=new Set(blobs.map(x=>x.sha256));if(ids.size!==blobs.length)fail('Duplicate media file');
-    const items=raw.items.map(x=>{if(!id(x.accountId)||!id(x.kinId)||!ids.has(x.sha256))fail('Invalid media scope');return {scope:{accountId:x.accountId,kinId:x.kinId},item:validateItem(x,true)}});
-    return {blobs,items};
-  }
-  function importInside(data) { for(const b of data.blobs)addBlob.run(b.sha256,b.mime,b.bytes);for(const x of data.items)saveInside(x.scope,[x.item],true); }
   function importBlob(sha256, mime, data) {
     if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) fail('Invalid media digest');
     const bytes = imageBytes(data, mime);
@@ -120,5 +106,5 @@ export function createMediaStore(db, { requireScope, transact, generateThumbnail
     const scope = { accountId: raw.accountId, kinId: raw.kinId };
     return saveInside(scope, [validateItem(raw, true)], true);
   }
-  return { save,list,blob,thumbnail,count,exportData,validateArchive,importInside,importBlob,importItem };
+  return { save, list, blob, thumbnail, importBlob, importItem };
 }

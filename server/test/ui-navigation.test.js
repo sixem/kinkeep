@@ -71,7 +71,6 @@ test('single account and conversation open automatically, and refresh keeps the 
   const routes = {
     '/api/digest': { kins: 2, conversations: 1, messages: 1, lastArchivedAt: null },
     '/api/accounts': { accounts: [{ accountId: 'account', displayName: 'Account' }] },
-    '/api/conversations': { conversations: [] },
     '/api/kins?accountId=account': { kins: [{ kinId: 'alpha', name: 'Alpha' }, { kinId: 'beta', name: 'Beta' }] },
     '/api/kins/profile?accountId=account&kinId=alpha': { fields: {
       ai_backstory: { value: 'v1:U2FsdGVkX1abc123', observedAt: null, history: [] },
@@ -100,7 +99,7 @@ test('single account and conversation open automatically, and refresh keeps the 
         sender: 'user', content: 'Newer message *narration*', timestamp: '2026-01-02T00:15:00Z',
         data: { reactions: { self: '👩🏽‍🚀', kin: '👩🏽‍🚀', example: '<b>Text</b>' } },
         revisions: [
-          { content: 'Earlier *rendering*', recordedAt: '2026-01-01T00:00:00Z', data: { reactions: [{ emoji: '❤️', count: 2 }] } },
+          { content: 'Earlier *rendering*', recordedAt: '2026-01-01T00:00:00Z', data: { reactions: { self: '❤️', kin: '❤️' } } },
           { content: 'Newer message *narration*', recordedAt: '2026-01-02T00:00:00Z', data: { reactions: {} } },
         ],
       },
@@ -432,17 +431,6 @@ test('single account and conversation open automatically, and refresh keeps the 
   await elements.get('#nav-images').click(); await flush();
   assert.match(elements.get('#images-entries').textContent, /No images archived/);
   assert.match(elements.get('#images-entries').children[0].className, /empty-state/);
-  routes['/api/conversations'].conversations.push({ id: 'legacy-main', kinName: 'Legacy', messageCount: 1 });
-  routes['/api/messages?conversationId=legacy-main&limit=50'] = { messages: [{ sender: 'kin', content: 'Unassigned message', timestamp: '2026-01-01T00:00:00Z', revisions: [] }], nextCursor: null, newerCursor: null, total: 1 };
-  await elements.get('#refresh').click();
-  const journalCallsBeforeLegacy = calls.filter(url => url.startsWith('/api/kins/journal?')).length;
-  await elements.get('#accounts').children[1].children[0].click();
-  await elements.get('#nav-journal').click();
-  assert.equal(calls.filter(url => url.startsWith('/api/kins/journal?')).length, journalCallsBeforeLegacy);
-  assert.match(elements.get('#journal-entries').textContent, /no associated Kin journal/i);
-  assert.match(elements.get('#journal-entries').children[0].className, /empty-state/);
-  assert.equal(elements.get('#conversation-panel').hidden, true);
-  assert.match(elements.get('#messages').textContent, /Unassigned message/);
 });
 
 test('an automatically selected conversation scrolls before the archive becomes visible', async () => {
@@ -463,7 +451,6 @@ test('an automatically selected conversation scrolls before the archive becomes 
   const routes = {
     '/api/digest': { kins: 1, conversations: 1, messages: 1 },
     '/api/accounts': { accounts: [{ accountId: 'a' }] },
-    '/api/conversations': { conversations: [] },
     '/api/kins?accountId=a': { kins: [{ kinId: 'k', name: 'Kin' }] },
     '/api/kins/profile?accountId=a&kinId=k': { fields: {} },
     '/api/conversations?accountId=a&kinId=k': { conversations: [{ id: 'observed-main', messageCount: 1 }] },
@@ -499,7 +486,6 @@ test('image grid virtualizes tiles, loads metadata on scroll, and fetches the or
     calls.push(path);
     if (path === '/api/digest') return {ok:true,json:async()=>({kins:1,conversations:0,messages:0})};
     if (path === '/api/accounts') return {ok:true,json:async()=>({accounts:[{accountId:'a'}]})};
-    if (path === '/api/conversations') return {ok:true,json:async()=>({conversations:[]})};
     if (path === '/api/kins?accountId=a') return {ok:true,json:async()=>({kins:[{kinId:'k',name:'Kin'}]})};
     if (path === '/api/kins/profile?accountId=a&kinId=k') return {ok:true,json:async()=>({fields:{}})};
     if (path === '/api/conversations?accountId=a&kinId=k') return {ok:true,json:async()=>({conversations:[]})};

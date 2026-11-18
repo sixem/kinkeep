@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY server.js archive.js validation.js media-store.js portable.js thumbnail.js ./
 COPY public ./public
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8765 DATABASE_PATH=/data/kinexport.sqlite
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8765 DATABASE_PATH=/data/kinkeep.sqlite
 USER node
 EXPOSE 8765
 CMD ["node", "server.js"]
