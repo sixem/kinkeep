@@ -14,11 +14,27 @@ const isProvisionalCapture = message => (message.captureSource ?? message.data?.
   typeof message.messageId === 'string' && /^local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(message.messageId);
 // Older messages without a source have the same precedence as cache data.
 const sourceRank = source => source === 'dom' ? 0 : source === 'history' ? 1 : 2;
-function upgradeRetainsObservation(old, oldData, incoming, data) {
+function upgradeRetainsObservation(old, oldData, incoming, nextData) {
   if (old.content !== incoming.content || (old.sender != null && old.sender !== incoming.sender) ||
       (old.timestamp != null && old.timestamp !== incoming.timestamp)) return false;
-  const nextData = JSON.parse(data);
   return Object.entries(oldData ?? {}).every(([key, value]) => key === 'captureSource' || isDeepStrictEqual(value, nextData[key]));
+}
+function withoutReactions(data) {
+  const { reactions, reactionsRevision, ...details } = data ?? {};
+  return details;
+}
+function sameMessageExceptReactions(old, oldData, incoming, upgrade) {
+  const previous = withoutReactions(oldData);
+  const next = withoutReactions(incoming.data);
+  if (upgrade) return upgradeRetainsObservation(old, previous, incoming, next);
+  return old.content === incoming.content && old.sender === incoming.sender && old.timestamp === incoming.timestamp &&
+    isDeepStrictEqual(previous, next);
+}
+function keepUnobservedReactions(previous, incoming) {
+  if (incoming?.reactions !== undefined || previous?.reactions === undefined) return incoming;
+  const data = { ...withoutReactions(incoming), reactions: previous.reactions };
+  if (previous.reactionsRevision !== undefined) data.reactionsRevision = previous.reactionsRevision;
+  return data;
 }
 // Ignore malformed/non-date expressions (notably SQLite's dynamic "now").
 const messageOrderTime = (alias = '') => `COALESCE(CASE WHEN substr(${alias}timestamp,5,1)='-' AND substr(${alias}timestamp,8,1)='-' THEN julianday(${alias}timestamp) END, CASE WHEN substr(${alias}first_seen,5,1)='-' AND substr(${alias}first_seen,8,1)='-' THEN julianday(${alias}first_seen) END, 0)`;
@@ -335,7 +351,8 @@ export function createArchive({ databasePath, token }) {
       if (importing) db.prepare('INSERT OR IGNORE INTO scoped_conversations(account_id,kin_id,id,first_seen,last_seen) VALUES(?,?,?,?,?)').run(scope.accountId,scope.kinId,m.conversationId,m.firstSeen || now,m.lastSeen || now);
       else db.prepare(`INSERT INTO scoped_conversations(account_id,kin_id,id,first_seen,last_seen) VALUES(?,?,?,?,?)
         ON CONFLICT(account_id,kin_id,id) DO UPDATE SET last_seen=excluded.last_seen`).run(scope.accountId, scope.kinId, m.conversationId, m.firstSeen || now, m.lastSeen || now);
-      const old = findScoped(scope, m); const data = m.data == null ? null : JSON.stringify(m.data);
+      const old = findScoped(scope, m);
+      const data = m.data == null ? null : JSON.stringify(m.data);
       const oldData = old?.data ? JSON.parse(old.data) : null;
       const newSource = m.data?.captureSource;
       const priority = sourceRank(newSource) - sourceRank(oldData?.captureSource);
@@ -348,8 +365,15 @@ export function createArchive({ databasePath, token }) {
         if (importing && old.fingerprint !== m.fingerprint) scopedRevisionInsert.run(old.id, m.fingerprint, m.sender, m.timestamp, m.content, data, m.lastSeen || now);
         counts.unchanged++;
       } else if (old.fingerprint !== m.fingerprint || upgrade) {
-        if (!upgrade || !upgradeRetainsObservation(old, oldData, m, data)) scopedRevisionInsert.run(old.id, old.fingerprint, old.sender, old.timestamp, old.content, old.data, now);
-        db.prepare('UPDATE scoped_messages SET fingerprint=?,sender=?,timestamp=?,content=?,data=?,last_seen=? WHERE id=?').run(m.fingerprint, m.sender, m.timestamp, m.content, data, importing && m.lastSeen ? m.lastSeen : now, old.id); counts.updated++;
+        const coalesceReactions = !importing && sameMessageExceptReactions(old, oldData, m, upgrade);
+        if (!coalesceReactions && (!upgrade || !upgradeRetainsObservation(old, oldData, m, JSON.parse(data)))) {
+          scopedRevisionInsert.run(old.id, old.fingerprint, old.sender, old.timestamp, old.content, old.data, now);
+        }
+        const nextData = coalesceReactions ? keepUnobservedReactions(oldData, m.data) : m.data;
+        const nextJson = nextData === m.data ? data : JSON.stringify(nextData);
+        db.prepare('UPDATE scoped_messages SET fingerprint=?,sender=?,timestamp=?,content=?,data=?,last_seen=? WHERE id=?')
+          .run(m.fingerprint, m.sender, m.timestamp, m.content, nextJson, importing && m.lastSeen ? m.lastSeen : now, old.id);
+        counts.updated++;
       } else counts.unchanged++;
     }
     return counts;

@@ -96,7 +96,14 @@ test('single account and conversation open automatically, and refresh keeps the 
       { sender: 'kin', kinName: 'Beta', content: 'Newer search result', timestamp: '2026-01-02T00:15:00Z' },
     ] },
     '/api/messages?conversationId=observed-main&limit=50&accountId=account&kinId=alpha': { messages: [
-      { sender: 'user', content: 'Newer message *narration*', timestamp: '2026-01-02T00:15:00Z', revisions: [{ content: 'Earlier *rendering*', recordedAt: '2026-01-01T00:00:00Z' }] },
+      {
+        sender: 'user', content: 'Newer message *narration*', timestamp: '2026-01-02T00:15:00Z',
+        data: { reactions: { self: '👩🏽‍🚀', kin: '👩🏽‍🚀', example: '<b>Text</b>' } },
+        revisions: [
+          { content: 'Earlier *rendering*', recordedAt: '2026-01-01T00:00:00Z', data: { reactions: [{ emoji: '❤️', count: 2 }] } },
+          { content: 'Newer message *narration*', recordedAt: '2026-01-02T00:00:00Z', data: { reactions: {} } },
+        ],
+      },
       { sender: 'kin', content: 'Older message', timestamp: '2026-01-01T12:00:00Z', revisions: [] },
       { sender: 'kin', content: 'Equal timestamp', timestamp: '2026-01-01T12:00:00Z', revisions: [] },
       { sender: 'kin', content: 'Undated message', timestamp: null, revisions: [] },
@@ -332,10 +339,18 @@ test('single account and conversation open automatically, and refresh keeps the 
   assert.match(elements.get('#messages').children[1].className, /message--kin/);
   assert.equal(elements.get('#selected-message-count').textContent, '51 messages');
   assert.match(elements.get('#message-paging').textContent, /Page 2 of 2/);
-  const details = elements.get('#messages').children[3].querySelector('details');
+  const newest = elements.get('#messages').children[3];
+  const reactions = newest.querySelector('ul');
+  assert.equal(reactions['aria-label'], 'Reactions');
+  assert.deepEqual(reactions.children.map(chip => chip.textContent), ['👩🏽‍🚀 2', '<b>Text</b>']);
+  assert.equal(reactions.children[1].children.length, 0);
+  const details = newest.querySelector('details');
   assert.doesNotMatch(details.textContent, /Earlier rendering/);
   details.open = true; details.listeners.toggle();
   assert.match(details.textContent, /Earlier rendering/);
+  assert.equal(details.querySelector('li').textContent, '❤️ 2');
+  assert.match(details.textContent, /No reactions recorded/);
+  assert.doesNotMatch(details.textContent, /Newer message/);
   const messagePaging = elements.get('#message-paging');
   assert.equal(messagePaging.children[0].children[0]['aria-label'], 'Oldest messages');
   assert.equal(messagePaging.children[0].children[1]['aria-label'], 'Older messages');

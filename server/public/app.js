@@ -792,6 +792,24 @@ function loadJournalPage(state, offset) {
   if (state.total) renderJournalPaging(state);
   return task;
 }
+function reactionChips(reactions) {
+  if (!reactions || typeof reactions !== 'object') return null;
+  const counts = new Map();
+  for (const reaction of Array.isArray(reactions) ? reactions : Object.values(reactions)) {
+    const label = typeof reaction === 'string' ? reaction : reaction?.emoji ?? reaction?.name;
+    const count = reaction?.count ?? 1;
+    if (typeof label !== 'string' || !label.trim() || !Number.isSafeInteger(count) || count < 1) continue;
+    counts.set(label, (counts.get(label) ?? 0n) + BigInt(count));
+  }
+  if (!counts.size) return null;
+  const list = document.createElement('ul');
+  list.className = 'message__reactions';
+  list.setAttribute('aria-label', 'Reactions');
+  for (const [label, count] of counts) {
+    list.append(textElement('li', count > 1n ? `${label} ${count}` : label));
+  }
+  return list;
+}
 function renderMessage(message, kinName = '') {
   const originalSender = typeof message.sender === 'string' ? message.sender.trim() : '';
   const isSelf = /^(?:user|self|me)$/i.test(originalSender);
@@ -805,6 +823,8 @@ function renderMessage(message, kinName = '') {
   const time = textElement('small', message.timestamp ? displayDate(message.timestamp) : `First observed ${displayDate(message.firstSeen)}`);
   const body = messageText(message.content);
   meta.append(sender, time); bubble.append(meta, body);
+  const reactions = reactionChips(message.data?.reactions);
+  if (reactions) bubble.append(reactions);
   if (message.revisions?.length) {
     const details = document.createElement('details');
     details.append(textElement('summary', countText(message.revisions.length, 'earlier version')));
@@ -813,7 +833,11 @@ function renderMessage(message, kinName = '') {
       if (!details.open || rendered) return;
       for (const revision of message.revisions) {
         const section = document.createElement('div'); section.className = 'revision';
-        section.append(textElement('small', `Recorded ${displayDate(revision.recordedAt)}`), messageText(revision.content));
+        section.append(textElement('small', `Recorded ${displayDate(revision.recordedAt)}`));
+        const earlierReactions = reactionChips(revision.data?.reactions);
+        if (revision.content !== message.content) section.append(messageText(revision.content));
+        else if (!earlierReactions) section.append(textElement('small', reactions ? 'No reactions recorded' : 'Text unchanged'));
+        if (earlierReactions) section.append(earlierReactions);
         details.append(section);
       }
       rendered = true;

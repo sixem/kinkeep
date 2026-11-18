@@ -20,8 +20,8 @@ function populate(a) {
   a.upsertProfile({accountId:'a',kinId:'k',fields:{ai_backstory_plaintext:{value:'Current',observedAt:'2026-01-02T12:00:00.000Z'}}});
   a.upsertJournal({accountId:'a',kinId:'k',entries:[{entryId:'j',createdAt:timestamp,description:'Journal text'}]});
   a.upsertJournal({accountId:'a',kinId:'k',entries:[{entryId:'j',createdAt:timestamp,description:'Journal alternative'}]});
-  a.scopedIngest({accountId:'a',kinId:'k'},[{conversationId:'main',messageId:'m',fingerprint:'one',sender:'kin',timestamp,content:'Original',data:{captureSource:'cache'}}]);
-  a.scopedIngest({accountId:'a',kinId:'k'},[{conversationId:'main',messageId:'m',fingerprint:'two',sender:'kin',timestamp,content:'Edited',data:{captureSource:'cache'}}]);
+  a.scopedIngest({accountId:'a',kinId:'k'},[{conversationId:'main',messageId:'m',fingerprint:'one',sender:'kin',timestamp,content:'Original',data:{captureSource:'cache',reactions:{actor:'❤️'}}}]);
+  a.scopedIngest({accountId:'a',kinId:'k'},[{conversationId:'main',messageId:'m',fingerprint:'two',sender:'kin',timestamp,content:'Edited',data:{captureSource:'cache',reactions:{actor:'👩🏽‍🚀'}}}]);
   a.ingest([{conversationId:'legacy',messageId:'old',fingerprint:'old',content:'Legacy',kinId:null,kinName:'Old',sender:null,timestamp:null,firstSeen:null,lastSeen:null}]);
   a.media.save({accountId:'a',kinId:'k'},[{sourceId:'image',kind:'selfie',variant:'preview',createdAt:timestamp,mime:'image/png',data:png}]);
 }

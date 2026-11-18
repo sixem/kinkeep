@@ -355,12 +355,52 @@ test('source upgrades retain missing metadata and skip equivalent earlier versio
   const cache = { ...history, fingerprint: 'cache', data: { captureSource: 'cache', reactions: { b: 'star', a: 'heart' } } };
   try {
     archive.upsertAccount({ accountId: 'a' }); archive.upsertKin(scope);
-    archive.scopedIngest(scope, [history, { ...history, messageId: 'two' }]);
+    const withPersona = { ...history, messageId: 'two', data: { ...history.data, persona: 'Example persona' } };
+    archive.scopedIngest(scope, [history, withPersona, { ...history, messageId: 'three' }]);
     archive.scopedIngest(scope, [cache, { ...cache, messageId: 'two', data: { captureSource: 'cache' } }]);
+    archive.scopedIngest(scope, [{ ...cache, messageId: 'three', data: { captureSource: 'cache' } }]);
     const records = archive.scopedArchiveMessages(scope);
     assert.deepEqual(records.find(m => m.messageId === 'one').revisions, []);
     const [previous] = records.find(m => m.messageId === 'two').revisions;
-    assert.deepEqual(previous.data, history.data);
+    assert.deepEqual(previous.data, withPersona.data);
+    const upgraded = records.find(m => m.messageId === 'three');
+    assert.deepEqual(upgraded.data.reactions, history.data.reactions);
+    assert.deepEqual(upgraded.revisions, []);
+  } finally { archive.db.close(); }
+});
+
+test('live reactions replace the current emoji on old messages without adding text revisions', () => {
+  const archive = create();
+  const scope = { accountId: 'a', kinId: 'k' };
+  const base = { conversationId: 'main', messageId: 'one', content: 'Original text', sender: 'kin', timestamp: '2025-01-01T00:00:00Z' };
+  const emoji = '👩🏽‍🚀';
+  const capture = (fingerprint, reactionData, content = base.content) =>
+    archive.scopedIngest(scope, [{ ...base, fingerprint, content, data: { captureSource: 'cache', ...reactionData } }]);
+  const read = () => {
+    const records = archive.scopedArchiveMessages(scope);
+    assert.equal(records.length, 1);
+    return records[0];
+  };
+  try {
+    archive.upsertAccount({ accountId: scope.accountId });
+    archive.upsertKin(scope);
+    assert.equal(capture('first', { reactions: {} }).inserted, 1);
+    assert.equal(capture('reaction', { reactions: { actor: emoji }, reactionsRevision: 1 }).updated, 1);
+    capture('counter-only', { reactions: { actor: emoji }, reactionsRevision: 2 });
+    capture('partial-observation', { reactionsRevision: 3 });
+    assert.deepEqual(read().data, { captureSource: 'cache', reactions: { actor: emoji }, reactionsRevision: 2 });
+    assert.deepEqual(read().revisions, []);
+    capture('reaction-removed', { reactions: {}, reactionsRevision: 4 });
+    assert.deepEqual(read().data.reactions, {});
+    assert.deepEqual(read().revisions, []);
+    capture('another-reaction', { reactions: { actor: '❤️' }, reactionsRevision: 5 });
+    capture('text-edit', { reactions: { actor: emoji }, reactionsRevision: 6 }, 'Edited text');
+    const message = read();
+    assert.equal(message.content, 'Edited text');
+    assert.deepEqual(message.data.reactions, { actor: emoji });
+    assert.equal(message.revisions.length, 1);
+    assert.equal(message.revisions[0].content, base.content);
+    assert.deepEqual(message.revisions[0].data.reactions, { actor: '❤️' });
   } finally { archive.db.close(); }
 });
 
